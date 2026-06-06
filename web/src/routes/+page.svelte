@@ -1,159 +1,238 @@
 <script lang="ts">
-	import { getHealth, API_URL } from '$lib/api';
+	import { goto } from '$app/navigation';
 	import { parseEpub } from '$lib/epub/parseEpub';
+	import { getAllBooks, saveBook, getPosition, savePosition, deleteBook } from '$lib/db';
+	import { fraccionProgreso } from '$lib/progress';
 	import type { Book } from '$lib/types';
 
-	// Estado de la comprobación de conectividad con el servidor TTS (Fase 0).
-	let estado = $state<'comprobando' | 'ok' | 'error'>('comprobando');
-	let detalle = $state('');
+	interface FilaLibro {
+		book: Book;
+		progreso: number; // 0..1
+		coverUrl: string | null;
+	}
+
+	let filas = $state<FilaLibro[]>([]);
+	let cargando = $state(true);
+	let parseando = $state(false);
+	let error = $state('');
+
+	async function cargarBiblioteca() {
+		// Revocar URLs previas para no fugar memoria.
+		for (const f of filas) if (f.coverUrl) URL.revokeObjectURL(f.coverUrl);
+		const libros = await getAllBooks();
+		filas = await Promise.all(
+			libros.map(async (book) => {
+				const pos = await getPosition(book.id);
+				return {
+					book,
+					progreso: fraccionProgreso(book, pos),
+					coverUrl: book.cover ? URL.createObjectURL(book.cover) : null
+				};
+			})
+		);
+		cargando = false;
+	}
 
 	$effect(() => {
-		getHealth()
-			.then((r) => ((estado = 'ok'), (detalle = r.status)))
-			.catch((e) => ((estado = 'error'), (detalle = e instanceof Error ? e.message : String(e))));
+		cargarBiblioteca();
 	});
-
-	// Verificación de parseo de EPUB (Fase 1). Se reemplaza por la biblioteca en la Fase 2.
-	let libro = $state<Book | null>(null);
-	let parseando = $state(false);
-	let errorParseo = $state('');
-	let coverUrl = $state<string | null>(null);
 
 	async function alSubir(e: Event) {
 		const input = e.target as HTMLInputElement;
 		const file = input.files?.[0];
+		input.value = ''; // permitir resubir el mismo archivo
 		if (!file) return;
 		parseando = true;
-		errorParseo = '';
-		libro = null;
-		if (coverUrl) URL.revokeObjectURL(coverUrl);
-		coverUrl = null;
+		error = '';
 		try {
-			libro = await parseEpub(file);
-			if (libro.cover) coverUrl = URL.createObjectURL(libro.cover);
+			const book = await parseEpub(file);
+			await saveBook(book);
+			// Si es nuevo, crear posición inicial; si ya existía, conservar la guardada.
+			if (!(await getPosition(book.id))) {
+				await savePosition({
+					bookId: book.id,
+					chapterIndex: 0,
+					sentenceIndex: 0,
+					updatedAt: Date.now()
+				});
+			}
+			await cargarBiblioteca();
 		} catch (err) {
-			errorParseo = err instanceof Error ? err.message : String(err);
+			error = err instanceof Error ? err.message : String(err);
 		} finally {
 			parseando = false;
 		}
 	}
 
-	const totalOraciones = $derived(
-		libro ? libro.chapters.reduce((n, c) => n + c.sentences.length, 0) : 0
-	);
+	async function eliminar(e: MouseEvent, id: string) {
+		e.stopPropagation();
+		if (!confirm('¿Eliminar este libro de la biblioteca?')) return;
+		await deleteBook(id);
+		await cargarBiblioteca();
+	}
 </script>
 
-<main>
+<header class="cabecera">
 	<h1>Lentton</h1>
-	<p>Lector con foco y narración por voz.</p>
+	<label class="boton-subir">
+		{parseando ? 'Parseando…' : '+ Añadir EPUB'}
+		<input type="file" accept=".epub,application/epub+zip" onchange={alSubir} hidden />
+	</label>
+</header>
 
-	<section class="health" data-estado={estado}>
-		{#if estado === 'comprobando'}
-			<span>Comprobando servidor en {API_URL}…</span>
-		{:else if estado === 'ok'}
-			<span>✓ Servidor TTS: {detalle}</span>
-		{:else}
-			<span>✗ Sin conexión con {API_URL} ({detalle})</span>
-		{/if}
-	</section>
+{#if error}<p class="error">Error: {error}</p>{/if}
 
-	<section class="subir">
-		<label>
-			<strong>Subir EPUB</strong>
-			<input type="file" accept=".epub,application/epub+zip" onchange={alSubir} />
-		</label>
-		{#if parseando}<p>Parseando…</p>{/if}
-		{#if errorParseo}<p class="error">Error: {errorParseo}</p>{/if}
-	</section>
-
-	{#if libro}
-		<section class="resultado">
-			<header>
-				{#if coverUrl}<img src={coverUrl} alt="Portada" class="cover" />{/if}
-				<div>
-					<h2>{libro.title}</h2>
-					{#if libro.author}<p class="autor">{libro.author}</p>{/if}
-					<p class="meta">
-						{libro.chapters.length} capítulos · {totalOraciones} oraciones
-					</p>
-				</div>
-			</header>
-
-			{#each libro.chapters as cap, i (i)}
-				<details open={i === 0}>
-					<summary>{cap.title} ({cap.sentences.length})</summary>
-					<div class="parrafo">
-						{#each cap.sentences as o, j (j)}<span class="oracion">{o} </span>{/each}
+{#if cargando}
+	<p class="vacio">Cargando biblioteca…</p>
+{:else if filas.length === 0}
+	<p class="vacio">Tu biblioteca está vacía. Añadí un EPUB para empezar.</p>
+{:else}
+	<ul class="grilla">
+		{#each filas as fila (fila.book.id)}
+			<li>
+				<button class="tarjeta" onclick={() => goto(`/read/${fila.book.id}`)}>
+					<div class="cover" class:sin-cover={!fila.coverUrl}>
+						{#if fila.coverUrl}
+							<img src={fila.coverUrl} alt="Portada de {fila.book.title}" />
+						{:else}
+							<span>{fila.book.title}</span>
+						{/if}
 					</div>
-				</details>
-			{/each}
-		</section>
-	{/if}
-</main>
+					<div class="info">
+						<strong>{fila.book.title}</strong>
+						{#if fila.book.author}<span class="autor">{fila.book.author}</span>{/if}
+						<div class="barra"><div class="relleno" style:width="{fila.progreso * 100}%"></div></div>
+						<span class="pct">{Math.round(fila.progreso * 100)}%</span>
+					</div>
+				</button>
+				<button class="eliminar" title="Eliminar" onclick={(e) => eliminar(e, fila.book.id)}>✕</button>
+			</li>
+		{/each}
+	</ul>
+{/if}
 
 <style>
-	main {
-		max-width: 45rem;
-		margin: 3rem auto;
+	.cabecera {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		max-width: 60rem;
+		margin: 1.5rem auto;
 		padding: 0 1rem;
+	}
+	.cabecera h1 {
+		margin: 0;
 		font-family: system-ui, sans-serif;
 	}
-	.health {
-		margin-top: 1.5rem;
-		padding: 0.75rem 1rem;
+	.boton-subir {
+		cursor: pointer;
+		background: #111;
+		color: #fff;
+		padding: 0.6rem 1rem;
 		border-radius: 0.5rem;
-		background: #f0f0f0;
-	}
-	.health[data-estado='ok'] {
-		background: #e6f6e6;
-	}
-	.health[data-estado='error'] {
-		background: #fbe6e6;
-	}
-	.subir {
-		margin: 1.5rem 0;
-	}
-	.subir label {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
+		font-size: 0.95rem;
 	}
 	.error {
+		max-width: 60rem;
+		margin: 0 auto;
+		padding: 0 1rem;
 		color: #b00020;
 	}
-	.resultado header {
-		display: flex;
-		gap: 1rem;
-		align-items: flex-start;
+	.vacio {
+		text-align: center;
+		color: #888;
+		margin-top: 4rem;
+		font-family: system-ui, sans-serif;
+	}
+	.grilla {
+		list-style: none;
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+		gap: 1.25rem;
+		max-width: 60rem;
+		margin: 0 auto;
+		padding: 1rem;
+	}
+	.grilla li {
+		position: relative;
+	}
+	.tarjeta {
+		display: block;
+		width: 100%;
+		text-align: left;
+		border: none;
+		background: none;
+		padding: 0;
+		cursor: pointer;
+		font-family: system-ui, sans-serif;
 	}
 	.cover {
-		width: 90px;
-		height: auto;
-		border-radius: 4px;
-		box-shadow: 0 1px 6px rgba(0, 0, 0, 0.2);
+		aspect-ratio: 2 / 3;
+		border-radius: 0.4rem;
+		overflow: hidden;
+		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+		background: #ddd;
+	}
+	.cover img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+	.cover.sin-cover {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		text-align: center;
+		padding: 0.5rem;
+		background: linear-gradient(135deg, #4a4a6a, #2a2a3a);
+		color: #fff;
+		font-weight: 600;
+		font-size: 0.85rem;
+	}
+	.info {
+		margin-top: 0.5rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+	}
+	.info strong {
+		font-size: 0.9rem;
+		line-height: 1.2;
 	}
 	.autor {
-		color: #555;
-		margin: 0.25rem 0;
+		font-size: 0.8rem;
+		color: #777;
 	}
-	.meta {
-		color: #888;
-		font-size: 0.9rem;
+	.barra {
+		height: 4px;
+		background: #e0e0e0;
+		border-radius: 2px;
+		margin-top: 0.3rem;
+		overflow: hidden;
 	}
-	details {
-		margin: 0.5rem 0;
-		border-bottom: 1px solid #eee;
-		padding-bottom: 0.5rem;
+	.relleno {
+		height: 100%;
+		background: #4a7;
 	}
-	summary {
+	.pct {
+		font-size: 0.75rem;
+		color: #999;
+	}
+	.eliminar {
+		position: absolute;
+		top: 0.3rem;
+		right: 0.3rem;
+		border: none;
+		background: rgba(0, 0, 0, 0.6);
+		color: #fff;
+		border-radius: 50%;
+		width: 1.6rem;
+		height: 1.6rem;
 		cursor: pointer;
-		font-weight: 600;
+		opacity: 0;
+		transition: opacity 0.15s;
 	}
-	.parrafo {
-		margin-top: 0.5rem;
-		line-height: 1.7;
-	}
-	.oracion:nth-child(even) {
-		background: #f5f5f5;
+	.grilla li:hover .eliminar {
+		opacity: 1;
 	}
 </style>
