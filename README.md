@@ -17,8 +17,11 @@ lentton/
 
 ```bash
 cd server
+uv run python download_models.py     # 1ª vez: descarga el modelo kokoro (~325MB)
 uv run uvicorn app.main:app --reload --port 8000
 ```
+
+Voces en español disponibles: `ef_dora` (f), `em_alex` (m), `em_santa` (m).
 
 ### Front
 
@@ -36,6 +39,6 @@ La URL del servidor se configura con `PUBLIC_API_URL` (ver `web/.env.example`).
 - [x] **Fase 1** — Ingesta de EPUB (`npm run test:epub`)
 - [x] **Fase 2** — Persistencia y biblioteca
 - [x] **Fase 3** — UI de foco (lectura sin audio) (`npm run test:e2e` con server arriba)
-- [ ] Fase 4 — Backend TTS con kokoro-onnx
+- [x] **Fase 4** — Backend TTS con kokoro-onnx (`/tts` WAV, `/voices`, caché)
 - [ ] Fase 5 — Integración de narración
 - [ ] Fase 6 — Pulido (PWA offline, velocidad, voz, ayuda)
