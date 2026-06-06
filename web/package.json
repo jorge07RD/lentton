@@ -13,7 +13,8 @@
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
 		"test:epub": "tsx scripts/smoke-epub.mjs",
-		"test:e2e": "node scripts/e2e-reader.mjs"
+		"test:e2e": "node scripts/e2e-reader.mjs",
+		"test:narracion": "node scripts/e2e-narracion.mjs"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",

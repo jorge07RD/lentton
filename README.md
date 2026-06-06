@@ -40,5 +40,5 @@ La URL del servidor se configura con `PUBLIC_API_URL` (ver `web/.env.example`).
 - [x] **Fase 2** — Persistencia y biblioteca
 - [x] **Fase 3** — UI de foco (lectura sin audio) (`npm run test:e2e` con server arriba)
 - [x] **Fase 4** — Backend TTS con kokoro-onnx (`/tts` WAV, `/voices`, caché)
-- [ ] Fase 5 — Integración de narración
+- [x] **Fase 5** — Integración de narración (Kokoro/Web Speech + prefetch) (`npm run test:narracion`)
 - [ ] Fase 6 — Pulido (PWA offline, velocidad, voz, ayuda)

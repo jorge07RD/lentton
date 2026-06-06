@@ -1,23 +1,30 @@
 <script lang="ts">
-	// Fase 3: UI de lectura con foco. Ventana de ~5 oraciones con la actual al 100%
-	// y las vecinas atenuadas. Chrome mínimo autoocultable, navegación por teclado.
+	// Fase 5: lectura con foco + narración encadenada (Kokoro / Web Speech) con prefetch.
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { getBook, getPosition, savePosition } from '$lib/db';
+	import { getBook, getPosition, savePosition, getSettings, type Settings } from '$lib/db';
 	import { debounce } from '$lib/debounce';
 	import { aplanar, type OracionPlana } from '$lib/progress';
+	import { Narrador } from '$lib/narration/controller.svelte';
+	import { KokoroProvider } from '$lib/narration/kokoro';
+	import { WebSpeechProvider } from '$lib/narration/webspeech';
+	import type { NarrationProvider } from '$lib/narration/types';
 	import type { Book } from '$lib/types';
 
-	const RADIO = 2; // oraciones visibles a cada lado de la actual
-	const PALABRAS_POR_MINUTO = 200; // estimación de lectura silenciosa
+	const RADIO = 2;
+	const PALABRAS_POR_MINUTO = 200;
 
 	let book = $state<Book | null>(null);
 	let planas = $state<OracionPlana[]>([]);
-	let idx = $state(0);
+	let narrador = $state<Narrador | null>(null);
 	let cargando = $state(true);
 	let tema = $state<'auto' | 'light' | 'dark'>('auto');
-	let chromeVisible = $state(true);
 	let prefiereOscuro = $state(false);
+	let chromeVisible = $state(true);
+	let opts = $state<{ voice: string; speed: number }>({ voice: 'ef_dora', speed: 1 });
+
+	// Proveedores (se crean una vez en el navegador).
+	const proveedores: Record<string, NarrationProvider> = {};
 
 	const bookId = $derived(page.params.bookId);
 
@@ -31,6 +38,10 @@
 				return;
 			}
 			const lista = aplanar(b);
+			const settings: Settings = await getSettings();
+			tema = settings.theme;
+			opts = { voice: settings.voice, speed: settings.speed };
+
 			const pos = await getPosition(id);
 			let inicio = 0;
 			if (pos) {
@@ -39,68 +50,74 @@
 				);
 				if (i >= 0) inicio = i;
 			}
+
+			proveedores.kokoro = new KokoroProvider();
+			proveedores.webspeech = new WebSpeechProvider();
+			const inicial = proveedores[settings.provider] ?? proveedores.kokoro;
+			const n = new Narrador(inicial, opts);
+			n.setContenido(
+				lista.map((o) => o.texto),
+				inicio
+			);
+
 			book = b;
 			planas = lista;
-			idx = inicio;
+			narrador = n;
 			cargando = false;
 		})();
 	});
 
-	// Detectar preferencia de color del sistema (para tema 'auto').
+	// Preferencia de color del sistema (para tema 'auto').
 	$effect(() => {
 		if (typeof window === 'undefined') return;
 		const mq = window.matchMedia('(prefers-color-scheme: dark)');
 		prefiereOscuro = mq.matches;
-		const onChange = (e: MediaQueryListEvent) => (prefiereOscuro = e.matches);
-		mq.addEventListener('change', onChange);
-		return () => mq.removeEventListener('change', onChange);
+		const fn = (e: MediaQueryListEvent) => (prefiereOscuro = e.matches);
+		mq.addEventListener('change', fn);
+		return () => mq.removeEventListener('change', fn);
 	});
 
 	const temaEfectivo = $derived(tema === 'auto' ? (prefiereOscuro ? 'dark' : 'light') : tema);
 
-	// Guardar posición con debounce cuando cambia el índice.
+	// Guardar posición con debounce al cambiar el índice.
 	const guardar = debounce((id: string, ci: number, si: number) => {
 		savePosition({ bookId: id, chapterIndex: ci, sentenceIndex: si, updatedAt: Date.now() });
 	}, 500);
+
+	const idx = $derived(narrador?.idx ?? 0);
 
 	$effect(() => {
 		const o = planas[idx];
 		if (o && bookId) guardar(bookId, o.chapterIndex, o.sentenceIndex);
 	});
 
-	// Ventana de oraciones a renderizar.
-	const ventana = $derived(
-		planas
-			.map((o, i) => ({ o, i, dist: i - idx }))
-			.filter((x) => Math.abs(x.dist) <= RADIO)
-	);
+	// Detener la narración al salir de la página.
+	$effect(() => () => narrador?.stop());
 
+	const ventana = $derived(
+		planas.map((o, i) => ({ o, i, dist: i - idx })).filter((x) => Math.abs(x.dist) <= RADIO)
+	);
 	const actual = $derived(planas[idx]);
 	const progreso = $derived(planas.length ? (idx + 1) / planas.length : 0);
+	const reproduciendo = $derived(narrador?.estado === 'playing');
 
-	// Palabras restantes y tiempo estimado.
 	const minutosRestantes = $derived.by(() => {
 		let palabras = 0;
 		for (let i = idx; i < planas.length; i++) palabras += contarPalabras(planas[i].texto);
 		return Math.ceil(palabras / PALABRAS_POR_MINUTO);
 	});
-
 	function contarPalabras(s: string): number {
 		return s.trim() ? s.trim().split(/\s+/).length : 0;
 	}
 
-	function irA(i: number) {
-		idx = Math.max(0, Math.min(planas.length - 1, i));
-		mostrarChrome();
-	}
 	function capRelativo(delta: number) {
-		if (!actual) return;
+		if (!actual || !narrador) return;
 		const objetivo = actual.chapterIndex + delta;
 		const i = planas.findIndex((o) => o.chapterIndex === objetivo && o.sentenceIndex === 0);
-		if (i >= 0) irA(i);
+		if (i >= 0) narrador.irA(i);
+		mostrarChrome();
 	}
 
-	// Opacidad por distancia al foco.
 	function opacidad(dist: number): number {
 		const a = Math.abs(dist);
 		if (a === 0) return 1;
@@ -109,7 +126,6 @@
 		return 0.1;
 	}
 
-	// --- Autoocultado del chrome ---
 	let timerChrome: ReturnType<typeof setTimeout> | undefined;
 	function mostrarChrome() {
 		chromeVisible = true;
@@ -122,15 +138,19 @@
 	});
 
 	function onKey(e: KeyboardEvent) {
+		if (!narrador) return;
 		switch (e.key) {
 			case ' ':
+				e.preventDefault();
+				narrador.toggle(); // reproducir / pausar / reanudar
+				break;
 			case 'ArrowRight':
 				e.preventDefault();
-				irA(idx + 1);
+				narrador.avanzar();
 				break;
 			case 'ArrowLeft':
 				e.preventDefault();
-				irA(idx - 1);
+				narrador.retroceder();
 				break;
 			case 'ArrowDown':
 				e.preventDefault();
@@ -141,10 +161,15 @@
 				capRelativo(-1);
 				break;
 		}
+		mostrarChrome();
 	}
 
 	function ciclarTema() {
 		tema = tema === 'auto' ? 'light' : tema === 'light' ? 'dark' : 'auto';
+	}
+
+	function cambiarProveedor(id: string) {
+		if (narrador && proveedores[id]) narrador.setProvider(proveedores[id]);
 	}
 </script>
 
@@ -152,34 +177,52 @@
 
 {#if cargando}
 	<p class="aviso">Cargando…</p>
-{:else if !book}
+{:else if !book || !narrador}
 	<p class="aviso">Libro no encontrado. <a href="/">Volver a la biblioteca</a></p>
 {:else}
 	<div class="lector" data-theme={temaEfectivo}>
-		<!-- Chrome superior -->
 		<header class="chrome top" class:oculto={!chromeVisible}>
 			<button class="icono" onclick={() => goto('/')} title="Biblioteca">←</button>
 			<span class="cap">{actual?.chapterTitle}</span>
-			<button class="icono" onclick={ciclarTema} title="Tema: {tema}">
-				{tema === 'dark' ? '🌙' : tema === 'light' ? '☀️' : '🌓'}
-			</button>
+			<div class="acciones">
+				<select
+					class="proveedor"
+					value={narrador.providerId}
+					onchange={(e) => cambiarProveedor(e.currentTarget.value)}
+					title="Proveedor de voz"
+				>
+					<option value="kokoro">Kokoro</option>
+					<option value="webspeech">Navegador</option>
+				</select>
+				<button class="icono" onclick={ciclarTema} title="Tema: {tema}">
+					{tema === 'dark' ? '🌙' : tema === 'light' ? '☀️' : '🌓'}
+				</button>
+			</div>
 		</header>
 
-		<!-- Ventana de foco -->
 		<div class="foco">
 			{#each ventana as item (item.i)}
 				<button
 					class="oracion"
 					class:actual={item.dist === 0}
 					style:opacity={opacidad(item.dist)}
-					onclick={() => irA(item.i)}
+					onclick={() => narrador?.irA(item.i)}
 				>
 					{item.o.texto}
 				</button>
 			{/each}
 		</div>
 
-		<!-- Chrome inferior -->
+		<!-- Botón central de reproducción -->
+		<button
+			class="play"
+			class:oculto={!chromeVisible && reproduciendo}
+			onclick={() => narrador?.toggle()}
+			title="Espacio"
+		>
+			{reproduciendo ? '⏸' : '▶'}
+		</button>
+
 		<footer class="chrome bottom" class:oculto={!chromeVisible}>
 			<div class="barra"><div class="relleno" style:width="{progreso * 100}%"></div></div>
 			<div class="estado">
@@ -196,7 +239,6 @@
 		margin-top: 4rem;
 		font-family: system-ui, sans-serif;
 	}
-
 	.lector {
 		--bg: #faf8f4;
 		--fg: #1a1a1a;
@@ -215,7 +257,6 @@
 		--fg: #e8e6e0;
 		--muted: #666;
 	}
-
 	.chrome {
 		position: absolute;
 		left: 0;
@@ -242,6 +283,20 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+		flex: 1;
+	}
+	.acciones {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.proveedor {
+		background: transparent;
+		color: var(--muted);
+		border: 1px solid color-mix(in srgb, var(--muted) 40%, transparent);
+		border-radius: 0.4rem;
+		padding: 0.2rem 0.4rem;
+		font-size: 0.8rem;
 	}
 	.icono {
 		background: none;
@@ -274,8 +329,6 @@
 		width: 100%;
 		font-size: 0.78rem;
 	}
-
-	/* Ventana de foco centrada */
 	.foco {
 		flex: 1;
 		display: flex;
@@ -305,7 +358,27 @@
 	.oracion.actual {
 		font-weight: 600;
 	}
-
+	.play {
+		position: absolute;
+		bottom: 3.5rem;
+		left: 50%;
+		transform: translateX(-50%);
+		width: 3.2rem;
+		height: 3.2rem;
+		border-radius: 50%;
+		border: none;
+		background: var(--acento);
+		color: #fff;
+		font-size: 1.3rem;
+		cursor: pointer;
+		box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+		transition: opacity 0.4s;
+		z-index: 3;
+	}
+	.play.oculto {
+		opacity: 0;
+		pointer-events: none;
+	}
 	@media (max-width: 600px) {
 		.oracion {
 			font-size: 1.3rem;
