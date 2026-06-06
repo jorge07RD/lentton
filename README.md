@@ -33,9 +33,9 @@ La URL del servidor se configura con `PUBLIC_API_URL` (ver `web/.env.example`).
 ## Estado
 
 - [x] **Fase 0** — Scaffold (web + server + git, `/health`, CORS, PWA base)
-- [ ] Fase 1 — Ingesta de EPUB
-- [ ] Fase 2 — Persistencia y biblioteca
-- [ ] Fase 3 — UI de foco (lectura sin audio)
+- [x] **Fase 1** — Ingesta de EPUB (`npm run test:epub`)
+- [x] **Fase 2** — Persistencia y biblioteca
+- [x] **Fase 3** — UI de foco (lectura sin audio) (`npm run test:e2e` con server arriba)
 - [ ] Fase 4 — Backend TTS con kokoro-onnx
 - [ ] Fase 5 — Integración de narración
 - [ ] Fase 6 — Pulido (PWA offline, velocidad, voz, ayuda)
