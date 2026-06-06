@@ -123,6 +123,32 @@
 	const progreso = $derived(planas.length ? (idx + 1) / planas.length : 0);
 	const reproduciendo = $derived(narrador?.estado === 'playing');
 
+	// Info lateral del capítulo: nº y nombre de capítulo, página estimada y % del capítulo.
+	// Los EPUB no tienen páginas reales: estimamos por palabras (~280 palabras/página).
+	const PALABRAS_POR_PAGINA = 280;
+	const capInfo = $derived.by(() => {
+		if (!book || !actual) return null;
+		const oc = oracionesCapitulo;
+		const local = oc.findIndex((x) => x.i === idx); // índice de la oración en el capítulo
+		let palabrasHasta = 0;
+		let palabrasTotal = 0;
+		oc.forEach((x, k) => {
+			const w = contarPalabras(x.texto);
+			palabrasTotal += w;
+			if (k <= local) palabrasHasta += w;
+		});
+		const paginas = Math.max(1, Math.ceil(palabrasTotal / PALABRAS_POR_PAGINA));
+		const pagina = Math.min(paginas, Math.floor(Math.max(0, palabrasHasta - 1) / PALABRAS_POR_PAGINA) + 1);
+		return {
+			numero: actual.chapterIndex + 1,
+			total: book.chapters.length,
+			nombre: actual.chapterTitle,
+			pagina,
+			paginas,
+			pct: oc.length ? (local + 1) / oc.length : 0
+		};
+	});
+
 	const minutosRestantes = $derived.by(() => {
 		let palabras = 0;
 		for (let i = idx; i < planas.length; i++) palabras += contarPalabras(planas[i].texto);
@@ -330,6 +356,19 @@
 			{/each}
 		</div>
 
+		<!-- Franja lateral sutil: capítulo, página y % del capítulo -->
+		{#if capInfo}
+			<aside class="lateral" class:tenue={!chromeVisible}>
+				<span class="cap-num">{capInfo.numero}/{capInfo.total}</span>
+				<span class="cap-nombre">{capInfo.nombre}</span>
+				<div class="prog-cap" title="{Math.round(capInfo.pct * 100)}% del capítulo">
+					<div class="prog-cap-fill" style:height="{capInfo.pct * 100}%"></div>
+				</div>
+				<span class="cap-pct">{Math.round(capInfo.pct * 100)}%</span>
+				<span class="cap-pag">pág {capInfo.pagina}/{capInfo.paginas}</span>
+			</aside>
+		{/if}
+
 		<button
 			class="play"
 			class:oculto={!chromeVisible && reproduciendo}
@@ -460,6 +499,73 @@
 		justify-content: space-between;
 		width: 100%;
 		font-size: 0.78rem;
+	}
+
+	/* Franja lateral discreta con la ubicación en el capítulo. */
+	.lateral {
+		position: fixed;
+		left: 0;
+		top: 0;
+		bottom: 0;
+		width: 3rem;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 0.7rem;
+		padding: 2rem 0;
+		box-sizing: border-box;
+		font-family: system-ui, sans-serif;
+		font-size: 0.68rem;
+		color: var(--muted);
+		opacity: 0.85;
+		transition: opacity 0.5s ease;
+		pointer-events: none; /* decorativa: no interfiere con la lectura */
+		z-index: 1;
+	}
+	.lateral.tenue {
+		opacity: 0.32;
+	}
+	.cap-num {
+		font-variant-numeric: tabular-nums;
+		letter-spacing: 0.03em;
+	}
+	.cap-nombre {
+		writing-mode: vertical-rl;
+		transform: rotate(180deg);
+		max-height: 45vh;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 0.72rem;
+		letter-spacing: 0.04em;
+		opacity: 0.85;
+	}
+	.prog-cap {
+		width: 3px;
+		height: 6rem;
+		background: color-mix(in srgb, var(--muted) 30%, transparent);
+		border-radius: 2px;
+		overflow: hidden;
+	}
+	.prog-cap-fill {
+		width: 100%;
+		background: var(--acento);
+		transition: height 0.3s ease;
+	}
+	.cap-pct {
+		font-variant-numeric: tabular-nums;
+	}
+	.cap-pag {
+		font-size: 0.62rem;
+		opacity: 0.8;
+		white-space: nowrap;
+	}
+	/* En pantallas angostas no hay "costado": ocultamos la franja. */
+	@media (max-width: 720px) {
+		.lateral {
+			display: none;
+		}
 	}
 
 	/* Contenedor de oraciones: scrollable, con padding para poder centrar la actual. */
