@@ -1,5 +1,9 @@
 <script lang="ts">
-	// Fase 5: lectura con foco + narración encadenada (Kokoro / Web Speech) con prefetch.
+	// Lector con foco + narración. Dos modos de vista con transición fluida:
+	//  - 'foco': solo la oración actual al 100%, vecinas atenuadas.
+	//  - 'completo': todo el capítulo visible (la "página completa").
+	// Ambos comparten el mismo DOM y layout; solo cambia la opacidad (animada) y el
+	// scroll. La oración actual queda siempre centrada (efecto teleprompter).
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { getBook, getPosition, savePosition, getSettings, saveSettings, type Settings } from '$lib/db';
@@ -12,7 +16,6 @@
 	import type { NarrationProvider } from '$lib/narration/types';
 	import type { Book } from '$lib/types';
 
-	const RADIO = 2;
 	const PALABRAS_POR_MINUTO = 200;
 
 	let book = $state<Book | null>(null);
@@ -20,6 +23,7 @@
 	let narrador = $state<Narrador | null>(null);
 	let cargando = $state(true);
 	let tema = $state<'auto' | 'light' | 'dark'>('auto');
+	let modo = $state<'foco' | 'completo'>('foco');
 	let prefiereOscuro = $state(false);
 	let chromeVisible = $state(true);
 	let opts = $state<{ voice: string; speed: number }>({ voice: 'ef_dora', speed: 1 });
@@ -27,11 +31,11 @@
 	let voces = $state<Voice[]>(VOCES_FALLBACK);
 	let mostrarAjustes = $state(false);
 	let mostrarAyuda = $state(false);
-	let listo = $state(false); // evita persistir settings durante la carga inicial
+	let listo = $state(false);
+	let contenedorEl = $state<HTMLElement | null>(null);
+	let primerCentrado = true;
 
-	// Proveedores (se crean una vez en el navegador).
 	const proveedores: Record<string, NarrationProvider> = {};
-
 	const bookId = $derived(page.params.bookId);
 
 	$effect(() => {
@@ -46,6 +50,7 @@
 			const lista = aplanar(b);
 			const settings: Settings = await getSettings();
 			tema = settings.theme;
+			modo = settings.mode;
 			opts = { voice: settings.voice, speed: settings.speed };
 
 			const pos = await getPosition(id);
@@ -72,26 +77,10 @@
 			narrador = n;
 			cargando = false;
 			listo = true;
-
-			// Cargar voces del servidor en segundo plano (no bloquea la lectura).
 			getVoices().then((v) => v.length && (voces = v));
 		})();
 	});
 
-	// Persistir preferencias cuando cambian (con debounce para el slider de velocidad).
-	const guardarSettings = debounce((s: Settings) => saveSettings(s), 300);
-	$effect(() => {
-		if (!listo) return;
-		const s: Settings = {
-			theme: tema,
-			provider: proveedorId,
-			voice: opts.voice,
-			speed: opts.speed
-		};
-		guardarSettings(s);
-	});
-
-	// Preferencia de color del sistema (para tema 'auto').
 	$effect(() => {
 		if (typeof window === 'undefined') return;
 		const mq = window.matchMedia('(prefers-color-scheme: dark)');
@@ -103,25 +92,34 @@
 
 	const temaEfectivo = $derived(tema === 'auto' ? (prefiereOscuro ? 'dark' : 'light') : tema);
 
-	// Guardar posición con debounce al cambiar el índice.
+	// Persistir preferencias (incluido el modo de vista).
+	const guardarSettings = debounce((s: Settings) => saveSettings(s), 300);
+	$effect(() => {
+		if (!listo) return;
+		guardarSettings({ theme: tema, provider: proveedorId, voice: opts.voice, speed: opts.speed, mode: modo });
+	});
+
 	const guardar = debounce((id: string, ci: number, si: number) => {
 		savePosition({ bookId: id, chapterIndex: ci, sentenceIndex: si, updatedAt: Date.now() });
 	}, 500);
 
 	const idx = $derived(narrador?.idx ?? 0);
+	const actual = $derived(planas[idx]);
 
 	$effect(() => {
 		const o = planas[idx];
 		if (o && bookId) guardar(bookId, o.chapterIndex, o.sentenceIndex);
 	});
 
-	// Detener la narración al salir de la página.
 	$effect(() => () => narrador?.stop());
 
-	const ventana = $derived(
-		planas.map((o, i) => ({ o, i, dist: i - idx })).filter((x) => Math.abs(x.dist) <= RADIO)
+	// Oraciones del capítulo actual (con su índice global) — lo que se renderiza.
+	const oracionesCapitulo = $derived(
+		actual
+			? planas.map((o, i) => ({ ...o, i })).filter((x) => x.chapterIndex === actual.chapterIndex)
+			: []
 	);
-	const actual = $derived(planas[idx]);
+
 	const progreso = $derived(planas.length ? (idx + 1) / planas.length : 0);
 	const reproduciendo = $derived(narrador?.estado === 'playing');
 
@@ -134,6 +132,40 @@
 		return s.trim() ? s.trim().split(/\s+/).length : 0;
 	}
 
+	// Centrar la oración actual en el contenedor (scroll programático).
+	function centrar(suave: boolean) {
+		const cont = contenedorEl;
+		if (!cont) return;
+		const el = cont.querySelector<HTMLElement>(`[data-i="${idx}"]`);
+		if (!el) return;
+		cont.scrollTo({
+			top: el.offsetTop - cont.clientHeight / 2 + el.offsetHeight / 2,
+			behavior: suave ? 'smooth' : 'auto'
+		});
+	}
+
+	// Re-centrar al avanzar, al cambiar de modo o al cambiar de capítulo.
+	$effect(() => {
+		void idx;
+		void modo;
+		void oracionesCapitulo.length;
+		if (!contenedorEl) return;
+		requestAnimationFrame(() => {
+			centrar(!primerCentrado);
+			primerCentrado = false;
+		});
+	});
+
+	// Opacidad de cada oración según el modo (transición CSS = animación fluida).
+	function opacidad(i: number): number {
+		if (modo === 'completo') return i === idx ? 1 : 0.72;
+		const d = Math.abs(i - idx);
+		if (d === 0) return 1;
+		if (d === 1) return 0.5;
+		if (d === 2) return 0.22;
+		return 0;
+	}
+
 	function capRelativo(delta: number) {
 		if (!actual || !narrador) return;
 		const objetivo = actual.chapterIndex + delta;
@@ -142,12 +174,9 @@
 		mostrarChrome();
 	}
 
-	function opacidad(dist: number): number {
-		const a = Math.abs(dist);
-		if (a === 0) return 1;
-		if (a === 1) return 0.5;
-		if (a === 2) return 0.22;
-		return 0.1;
+	function alternarModo() {
+		modo = modo === 'foco' ? 'completo' : 'foco';
+		mostrarChrome();
 	}
 
 	let timerChrome: ReturnType<typeof setTimeout> | undefined;
@@ -163,7 +192,6 @@
 
 	function onKey(e: KeyboardEvent) {
 		if (!narrador) return;
-		// '?' abre/cierra la ayuda; Escape cierra cualquier overlay.
 		if (e.key === '?') {
 			e.preventDefault();
 			mostrarAyuda = !mostrarAyuda;
@@ -174,10 +202,15 @@
 			mostrarAjustes = false;
 			return;
 		}
+		if (e.key === 'm' || e.key === 'M') {
+			e.preventDefault();
+			alternarModo();
+			return;
+		}
 		switch (e.key) {
 			case ' ':
 				e.preventDefault();
-				narrador.toggle(); // reproducir / pausar / reanudar
+				narrador.toggle();
 				break;
 			case 'ArrowRight':
 				e.preventDefault();
@@ -202,14 +235,12 @@
 	function ciclarTema() {
 		tema = tema === 'auto' ? 'light' : tema === 'light' ? 'dark' : 'auto';
 	}
-
 	function cambiarProveedor(id: string) {
 		if (narrador && proveedores[id]) {
 			proveedorId = id as 'kokoro' | 'webspeech';
 			narrador.setProvider(proveedores[id]);
 		}
 	}
-
 	function setVoz(v: string) {
 		opts = { ...opts, voice: v };
 		narrador?.setOpts(opts);
@@ -232,6 +263,13 @@
 			<button class="icono" onclick={() => goto('/')} title="Biblioteca">←</button>
 			<span class="cap">{actual?.chapterTitle}</span>
 			<div class="acciones">
+				<button
+					class="icono"
+					onclick={alternarModo}
+					title={modo === 'foco' ? 'Modo página completa (m)' : 'Modo foco (m)'}
+				>
+					{modo === 'foco' ? '▤' : '◎'}
+				</button>
 				<button class="icono" onclick={ciclarTema} title="Tema: {tema}">
 					{tema === 'dark' ? '🌙' : tema === 'light' ? '☀️' : '🌓'}
 				</button>
@@ -242,7 +280,6 @@
 			</div>
 		</header>
 
-		<!-- Panel de ajustes (voz, velocidad, proveedor) -->
 		{#if mostrarAjustes}
 			<div class="panel">
 				<label>
@@ -278,20 +315,21 @@
 			</div>
 		{/if}
 
-		<div class="foco">
-			{#each ventana as item (item.i)}
+		<!-- Lista de oraciones del capítulo (misma para ambos modos) -->
+		<div class="foco" data-modo={modo} bind:this={contenedorEl}>
+			{#each oracionesCapitulo as item (item.i)}
 				<button
 					class="oracion"
-					class:actual={item.dist === 0}
-					style:opacity={opacidad(item.dist)}
+					class:actual={item.i === idx}
+					data-i={item.i}
+					style:opacity={opacidad(item.i)}
 					onclick={() => narrador?.irA(item.i)}
 				>
-					{item.o.texto}
+					{item.texto}
 				</button>
 			{/each}
 		</div>
 
-		<!-- Botón central de reproducción -->
 		<button
 			class="play"
 			class:oculto={!chromeVisible && reproduciendo}
@@ -309,7 +347,6 @@
 			</div>
 		</footer>
 
-		<!-- Overlay de ayuda con atajos de teclado -->
 		{#if mostrarAyuda}
 			<div
 				class="overlay"
@@ -324,6 +361,7 @@
 						<dt>Espacio</dt><dd>Reproducir / pausar</dd>
 						<dt>→ / ←</dt><dd>Oración siguiente / anterior</dd>
 						<dt>↓ / ↑</dt><dd>Capítulo siguiente / anterior</dd>
+						<dt>m</dt><dd>Cambiar entre foco y página completa</dd>
 						<dt>Clic en oración</dt><dd>Saltar a esa oración</dd>
 						<dt>?</dt><dd>Mostrar / ocultar esta ayuda</dd>
 						<dt>Esc</dt><dd>Cerrar</dd>
@@ -390,7 +428,7 @@
 	.acciones {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
+		gap: 0.4rem;
 	}
 	.icono {
 		background: none;
@@ -423,35 +461,58 @@
 		width: 100%;
 		font-size: 0.78rem;
 	}
+
+	/* Contenedor de oraciones: scrollable, con padding para poder centrar la actual. */
 	.foco {
+		position: relative;
 		flex: 1;
-		display: flex;
-		flex-direction: column;
-		justify-content: center;
-		gap: 0.6rem;
 		max-width: 65ch;
 		margin: 0 auto;
-		padding: 4rem 1.5rem;
+		padding: 45vh 1.5rem;
 		width: 100%;
 		box-sizing: border-box;
+		overflow-y: auto;
+		scrollbar-width: none; /* Firefox */
+		scroll-behavior: smooth;
 	}
+	.foco::-webkit-scrollbar {
+		display: none;
+	}
+	/* En modo foco no se permite el scroll manual: solo se sigue la narración. */
+	.foco[data-modo='foco'] {
+		overflow-y: hidden;
+	}
+
 	.oracion {
+		display: block;
+		width: 100%;
+		text-align: left;
 		font-family: Georgia, 'Times New Roman', serif;
 		font-size: 1.6rem;
 		line-height: 1.7;
-		text-align: left;
 		background: none;
 		border: none;
 		color: inherit;
 		cursor: pointer;
-		padding: 0;
+		padding: 0.15rem 0.4rem;
+		border-radius: 0.4rem;
 		transition:
-			opacity 0.4s ease,
-			font-size 0.3s ease;
+			opacity 0.5s ease,
+			font-size 0.35s ease,
+			background 0.3s ease;
 	}
 	.oracion.actual {
 		font-weight: 600;
 	}
+	/* En página completa el texto es más compacto y la actual se resalta. */
+	.foco[data-modo='completo'] .oracion {
+		font-size: 1.2rem;
+		line-height: 1.6;
+	}
+	.foco[data-modo='completo'] .oracion.actual {
+		background: color-mix(in srgb, var(--acento) 18%, transparent);
+	}
+
 	.play {
 		position: absolute;
 		bottom: 3.5rem;
@@ -544,6 +605,9 @@
 	@media (max-width: 600px) {
 		.oracion {
 			font-size: 1.3rem;
+		}
+		.foco[data-modo='completo'] .oracion {
+			font-size: 1.05rem;
 		}
 	}
 </style>

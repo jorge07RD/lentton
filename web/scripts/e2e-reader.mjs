@@ -62,9 +62,24 @@ try {
 	const cap0 = await page.textContent('.top .cap');
 	check(!!oracion0, 'hay oración actual');
 	check(cap0?.includes('Capítulo primero'), `capítulo inicial: ${cap0}`);
-	const ventana0 = await page.locator('.foco .oracion').count();
-	check(ventana0 > 1 && ventana0 <= 3, `ventana inicial muestra ${ventana0} oraciones`);
+	const actuales = await page.locator('.foco .oracion.actual').count();
+	check(actuales === 1, `hay exactamente una oración actual (${actuales})`);
 	await captura("2-lector");
+
+	// Modo foco: una oración lejana debe estar oculta (opacity 0).
+	const lejana = '.foco .oracion:last-child';
+	const opFoco = await page.locator(lejana).evaluate((el) => getComputedStyle(el).opacity);
+	check(Number(opFoco) < 0.3, `en foco la oración lejana está atenuada (op=${opFoco})`);
+
+	// Cambiar a página completa con 'm': la lejana se vuelve visible.
+	await page.keyboard.press('m');
+	const modoAttr = await page.locator('.foco').getAttribute('data-modo');
+	check(modoAttr === 'completo', `modo cambió a completo (${modoAttr})`);
+	await page.waitForTimeout(700); // animación de opacidad
+	const opCompleto = await page.locator(lejana).evaluate((el) => getComputedStyle(el).opacity);
+	check(Number(opCompleto) > 0.5, `en completo la oración lejana es visible (op=${opCompleto})`);
+	await captura("2b-completo");
+	await page.keyboard.press('m'); // volver a foco
 
 	// 3) Avanzar con ArrowRight cambia la oración actual
 	await page.keyboard.press('ArrowRight');

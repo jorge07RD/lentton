@@ -2,19 +2,21 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type { Book, ReadingPosition } from '$lib/types';
 
-// Preferencias del usuario (se completan en la Fase 6).
+// Preferencias del usuario.
 export interface Settings {
 	theme: 'auto' | 'light' | 'dark';
 	provider: 'kokoro' | 'webspeech';
 	voice: string;
 	speed: number; // 0.5 – 2.0
+	mode: 'foco' | 'completo'; // vista de lectura: foco u oración / página completa
 }
 
 export const SETTINGS_POR_DEFECTO: Settings = {
 	theme: 'auto',
 	provider: 'kokoro',
 	voice: 'ef_dora',
-	speed: 1.0
+	speed: 1.0,
+	mode: 'foco'
 };
 
 interface LenttonDB extends DBSchema {
