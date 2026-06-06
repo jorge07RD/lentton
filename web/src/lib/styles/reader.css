@@ -34,6 +34,11 @@
 	letter-spacing: -0.003em;
 	text-wrap: pretty;
 	hanging-punctuation: first last;
+	transition: font-size 0.4s var(--ease);
+}
+/* En modo foco la letra crece (lectura inmersiva); en página completa, tamaño normal. */
+.reader.mode-focus .read-col {
+	font-size: calc(var(--reading-size) * 1.25);
 }
 .read-col p {
 	margin: 0 0 1.05em;

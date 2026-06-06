@@ -160,6 +160,9 @@
 			centrar(!primerCentrado);
 			primerCentrado = false;
 		});
+		// Re-centrar al terminar la animación de tamaño (al cambiar de modo crece la letra).
+		const t = setTimeout(() => centrar(true), 450);
+		return () => clearTimeout(t);
 	});
 
 	// --- Autoocultado del cromo ---
