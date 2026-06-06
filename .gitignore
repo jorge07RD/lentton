@@ -1,0 +1,23 @@
+# Node / SvelteKit
+node_modules/
+web/.svelte-kit/
+web/build/
+web/.vite/
+.DS_Store
+
+# Python / uv
+server/.venv/
+__pycache__/
+*.pyc
+
+# Modelos y cache de TTS (pesados, se descargan aparte)
+server/models/
+server/cache/
+*.onnx
+*.bin
+
+# Entorno
+*.local
+
+# Logs
+*.log
