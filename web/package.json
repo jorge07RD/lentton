@@ -11,7 +11,8 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"lint": "prettier --check . && eslint .",
-		"format": "prettier --write ."
+		"format": "prettier --write .",
+		"test:epub": "tsx scripts/smoke-epub.mjs"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
@@ -24,10 +25,12 @@
 		"eslint-config-prettier": "^10.1.8",
 		"eslint-plugin-svelte": "^3.17.0",
 		"globals": "^17.4.0",
+		"linkedom": "^0.18.12",
 		"prettier": "^3.8.1",
 		"prettier-plugin-svelte": "^3.5.1",
 		"svelte": "^5.55.2",
 		"svelte-check": "^4.4.6",
+		"tsx": "^4.22.4",
 		"typescript": "^6.0.2",
 		"typescript-eslint": "^8.58.1",
 		"vite": "^8.0.7"
