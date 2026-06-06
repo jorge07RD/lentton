@@ -12,6 +12,9 @@ export interface Book {
 export interface Chapter {
 	title: string;
 	sentences: string[]; // ya segmentadas con Intl.Segmenter
+	// Índices (en `sentences`) donde empieza cada párrafo. Permite renderizar por
+	// párrafos en el lector. Opcional para compatibilidad con libros guardados antes.
+	paraStarts?: number[];
 }
 
 export interface ReadingPosition {

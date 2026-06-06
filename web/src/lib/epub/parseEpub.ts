@@ -49,20 +49,25 @@ function extraerTexto(nodo: Node): string {
 	return salida;
 }
 
-/** Convierte un documento XHTML en oraciones segmentadas, párrafo a párrafo. */
-function documentoAOraciones(doc: Document): string[] {
+/** Convierte un documento XHTML en oraciones segmentadas y los inicios de párrafo. */
+function documentoAOraciones(doc: Document): { sentences: string[]; paraStarts: number[] } {
 	const cuerpo = doc.body ?? doc.documentElement;
 	const bruto = extraerTexto(cuerpo);
-	const oraciones: string[] = [];
+	const sentences: string[] = [];
+	const paraStarts: number[] = [];
 	for (const bloque of bruto.split('\n')) {
 		const parrafo = bloque.replace(/\s+/g, ' ').trim();
 		if (!parrafo) continue;
+		let agregadas = 0;
 		for (const { segment } of segmentador.segment(parrafo)) {
 			const oracion = segment.trim();
-			if (oracion) oraciones.push(oracion);
+			if (!oracion) continue;
+			if (agregadas === 0) paraStarts.push(sentences.length); // inicio de este párrafo
+			sentences.push(oracion);
+			agregadas++;
 		}
 	}
-	return oraciones;
+	return { sentences, paraStarts };
 }
 
 /** Título del capítulo: primer encabezado del documento, o un genérico. */
@@ -129,9 +134,9 @@ export async function parseEpub(file: File): Promise<Book> {
 		const docFinal = doc.querySelector('parsererror')
 			? dom.parseFromString(html, 'text/html')
 			: doc;
-		const sentences = documentoAOraciones(docFinal);
+		const { sentences, paraStarts } = documentoAOraciones(docFinal);
 		if (sentences.length === 0) continue; // saltar páginas vacías (portadas, etc.)
-		chapters.push({ title: tituloCapitulo(docFinal, indice), sentences });
+		chapters.push({ title: tituloCapitulo(docFinal, indice), sentences, paraStarts });
 		indice++;
 	}
 

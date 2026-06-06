@@ -9,6 +9,44 @@ export interface OracionPlana {
 	chapterTitle: string;
 }
 
+// Párrafo del lector: oraciones con su índice global y si es diálogo (speaker).
+export interface Parrafo {
+	speaker: boolean;
+	sentences: { texto: string; gi: number }[];
+}
+
+/** Detecta inicio de diálogo (raya, comilla angular o guion). */
+function esDialogo(s: string): boolean {
+	return /^\s*[—«"“-]/.test(s);
+}
+
+/** Reconstruye los párrafos de un capítulo con índices globales (para el lector). */
+export function parrafosDeCapitulo(book: Book, chapterIndex: number): Parrafo[] {
+	const cap = book.chapters[chapterIndex];
+	if (!cap) return [];
+	// Offset global = oraciones de capítulos previos.
+	let base = 0;
+	for (let i = 0; i < chapterIndex; i++) base += book.chapters[i].sentences.length;
+
+	const n = cap.sentences.length;
+	// Si no hay límites de párrafo (libros viejos), todo es un único párrafo.
+	const starts = cap.paraStarts && cap.paraStarts.length ? cap.paraStarts : [0];
+
+	const parrafos: Parrafo[] = [];
+	for (let p = 0; p < starts.length; p++) {
+		const ini = starts[p];
+		const fin = p + 1 < starts.length ? starts[p + 1] : n;
+		const sentences = [];
+		for (let k = ini; k < fin; k++) {
+			sentences.push({ texto: cap.sentences[k], gi: base + k });
+		}
+		if (sentences.length) {
+			parrafos.push({ speaker: esDialogo(sentences[0].texto), sentences });
+		}
+	}
+	return parrafos;
+}
+
 /** Aplana todas las oraciones del libro en orden lineal de lectura. */
 export function aplanar(book: Book): OracionPlana[] {
 	const out: OracionPlana[] = [];

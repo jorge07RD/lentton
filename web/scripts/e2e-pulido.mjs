@@ -1,4 +1,4 @@
-// E2E Fase 6: persistencia de preferencias (velocidad) y overlay de ayuda. Contra dev.
+// E2E: persistencia de preferencias (velocidad) + overlay de ayuda (diseño nuevo). Contra dev.
 import { chromium } from 'playwright-core';
 import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -11,43 +11,44 @@ const epubPath = join(tmpdir(), 'prueba.epub');
 await writeFile(epubPath, await crearEpubBuffer());
 
 const browser = await chromium.launch({ executablePath: EXEC, headless: true });
-const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
+const page = await browser.newPage({ viewport: { width: 1000, height: 720 } });
 const fallos = [];
 const check = (c, m) => !c && fallos.push(m);
 
 async function abrirLector() {
 	await page.goto(BASE, { waitUntil: 'networkidle' });
 	await page.setInputFiles('input[type=file]', epubPath).catch(() => {});
-	await page.waitForSelector('.tarjeta');
-	await page.click('.tarjeta');
-	await page.waitForSelector('.foco .oracion.actual');
+	await page.waitForSelector('.book');
+	await page.click('.book');
+	await page.waitForSelector('.reader .sentence.active');
 }
 
 try {
 	await abrirLector();
 
 	// Abrir ajustes y cambiar la velocidad.
-	await page.click('button[title="Ajustes"]');
-	await page.waitForSelector('.panel input[type=range]');
-	await page.fill('.panel input[type=range]', '1.5');
-	await page.dispatchEvent('.panel input[type=range]', 'input');
-	await page.waitForTimeout(600); // esperar el debounce de saveSettings
+	await page.click('button[title="Ajustes de voz"]');
+	await page.waitForSelector('.sheet.in .slider');
+	await page.fill('.sheet .slider', '1.5');
+	await page.dispatchEvent('.sheet .slider', 'input');
+	await page.waitForTimeout(600); // debounce de guardado
 
-	// Recargar y comprobar que persistió.
+	// Recargar y comprobar persistencia.
 	await page.reload({ waitUntil: 'networkidle' });
-	await page.waitForSelector('.foco .oracion.actual');
-	await page.click('button[title="Ajustes"]');
-	await page.waitForSelector('.panel input[type=range]');
-	const vel = await page.inputValue('.panel input[type=range]');
+	await page.waitForSelector('.reader .sentence.active');
+	await page.click('button[title="Ajustes de voz"]');
+	await page.waitForSelector('.sheet.in .slider');
+	const vel = await page.inputValue('.sheet .slider');
 	check(vel === '1.5', `velocidad persistida: ${vel}`);
+	await page.click('button[aria-label="Cerrar"]');
 
 	// Overlay de ayuda con '?'.
 	await page.keyboard.press('?');
-	await page.waitForSelector('.ayuda', { timeout: 3000 });
-	check(await page.locator('.ayuda').isVisible(), 'ayuda visible con ?');
+	await page.waitForSelector('.help', { timeout: 3000 });
+	check(await page.locator('.help-card').isVisible(), 'ayuda visible con ?');
 	await page.keyboard.press('Escape');
 	await page.waitForTimeout(200);
-	check(!(await page.locator('.ayuda').count()), 'ayuda se cierra con Esc');
+	check((await page.locator('.help').count()) === 0, 'ayuda se cierra con Esc');
 } catch (e) {
 	fallos.push(`excepción: ${e.message}`);
 } finally {

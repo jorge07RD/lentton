@@ -1,0 +1,206 @@
+/* ============================================================
+   Lentton — design tokens & themes (del handoff de diseño)
+   La tipografía es la protagonista. Calma. Mínimo en pantalla.
+   ============================================================ */
+
+:root {
+	--serif: 'Newsreader', Georgia, 'Times New Roman', serif;
+	--sans: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
+
+	--reading-size: 21px;
+	--reading-measure: 34rem; /* ~65 caracteres */
+
+	--accent: #1f7a5c;
+	--accent-ink: #ffffff;
+
+	--ease: cubic-bezier(0.4, 0, 0.2, 1);
+	--ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ---- Claro: papel cálido ---- */
+:root,
+[data-theme='light'] {
+	--bg: #f4efe5;
+	--bg-2: #efe9dc;
+	--surface: #fbf8f1;
+	--surface-2: #ffffff;
+	--ink-rgb: 38 33 26;
+	--hairline: rgba(38, 33, 26, 0.1);
+	--hairline-strong: rgba(38, 33, 26, 0.16);
+	--shadow-card: 0 1px 2px rgba(38, 33, 26, 0.05), 0 8px 24px -12px rgba(38, 33, 26, 0.18);
+	--shadow-float: 0 2px 6px rgba(38, 33, 26, 0.1), 0 18px 50px -16px rgba(38, 33, 26, 0.32);
+	--scrim: rgba(34, 30, 23, 0.34);
+	--cover-emboss: rgba(255, 255, 255, 0.5);
+	color-scheme: light;
+}
+
+/* ---- Oscuro: tinta cálida ---- */
+[data-theme='dark'] {
+	--bg: #14130e;
+	--bg-2: #100f0b;
+	--surface: #1c1a14;
+	--surface-2: #221f18;
+	--ink-rgb: 236 230 217;
+	--hairline: rgba(236, 230, 217, 0.12);
+	--hairline-strong: rgba(236, 230, 217, 0.2);
+	--shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px -14px rgba(0, 0, 0, 0.7);
+	--shadow-float: 0 2px 8px rgba(0, 0, 0, 0.5), 0 24px 60px -18px rgba(0, 0, 0, 0.85);
+	--scrim: rgba(8, 7, 5, 0.58);
+	--cover-emboss: rgba(255, 255, 255, 0.06);
+	color-scheme: dark;
+}
+
+/* jerarquía por opacidad */
+.ink {
+	color: rgb(var(--ink-rgb));
+}
+.ink-1 {
+	color: rgb(var(--ink-rgb) / 0.92);
+}
+.ink-2 {
+	color: rgb(var(--ink-rgb) / 0.62);
+}
+.ink-3 {
+	color: rgb(var(--ink-rgb) / 0.4);
+}
+.ink-4 {
+	color: rgb(var(--ink-rgb) / 0.26);
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	height: 100vh;
+	height: 100dvh;
+	margin: 0;
+}
+
+body {
+	background: var(--bg);
+	color: rgb(var(--ink-rgb));
+	font-family: var(--serif);
+	font-optical-sizing: auto;
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+	overflow: hidden;
+	transition: background 0.6s var(--ease);
+}
+
+button {
+	font-family: inherit;
+}
+
+::selection {
+	background: color-mix(in oklab, var(--accent) 26%, transparent);
+}
+
+/* icono base: el tamaño lo fija cada contexto (.iconbtn svg, etc.) */
+svg.ic {
+	width: 1.25em;
+	height: 1.25em;
+	display: block;
+}
+
+/* microetiqueta (capítulo · página · %) — único uso de sans */
+.meta {
+	font-family: var(--sans);
+	font-weight: 500;
+	font-size: 11px;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: rgb(var(--ink-rgb) / 0.42);
+}
+
+/* botón redondo de icono */
+.iconbtn {
+	appearance: none;
+	border: 0;
+	background: transparent;
+	color: rgb(var(--ink-rgb) / 0.55);
+	width: 42px;
+	height: 42px;
+	display: grid;
+	place-items: center;
+	border-radius: 999px;
+	cursor: pointer;
+	transition:
+		color 0.2s var(--ease),
+		background 0.2s var(--ease),
+		transform 0.2s var(--ease);
+}
+.iconbtn:hover {
+	color: rgb(var(--ink-rgb) / 0.9);
+	background: rgb(var(--ink-rgb) / 0.06);
+}
+.iconbtn:active {
+	transform: scale(0.94);
+}
+.iconbtn svg {
+	width: 21px;
+	height: 21px;
+	display: block;
+}
+
+/* botones */
+.btn {
+	appearance: none;
+	cursor: pointer;
+	font-family: var(--sans);
+	font-size: 13.5px;
+	font-weight: 600;
+	letter-spacing: 0.01em;
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	padding: 11px 20px;
+	border-radius: 999px;
+	border: 1px solid transparent;
+	transition:
+		transform 0.18s var(--ease),
+		background 0.2s var(--ease),
+		box-shadow 0.2s var(--ease),
+		border-color 0.2s;
+}
+.btn:active {
+	transform: scale(0.97);
+}
+.btn-accent {
+	background: var(--accent);
+	color: var(--accent-ink);
+}
+.btn-accent:hover {
+	box-shadow: 0 8px 22px -8px color-mix(in oklab, var(--accent) 70%, transparent);
+}
+.btn-ghost {
+	background: transparent;
+	color: rgb(var(--ink-rgb) / 0.7);
+	border-color: var(--hairline-strong);
+}
+.btn-ghost:hover {
+	background: rgb(var(--ink-rgb) / 0.05);
+	color: rgb(var(--ink-rgb) / 0.95);
+}
+
+/* entrada de ruta (solo si el usuario no pidió menos movimiento) */
+@media (prefers-reduced-motion: no-preference) {
+	.route {
+		animation: routein 0.5s var(--ease-out);
+	}
+}
+@keyframes routein {
+	from {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+
+.hidden-file {
+	display: none;
+}

@@ -20,7 +20,7 @@ try {
 	// 1) Online: cargar app, registrar SW y guardar un libro.
 	await page.goto(BASE, { waitUntil: 'networkidle' });
 	await page.setInputFiles('input[type=file]', epubPath);
-	await page.waitForSelector('.tarjeta');
+	await page.waitForSelector('.book');
 	const url = page.url();
 
 	// Esperar a que el SW tome el control (con tope, para no colgarse).
@@ -31,19 +31,19 @@ try {
 	// Recargar una vez ONLINE ya con el SW al mando: así la navegación pasa por el
 	// SW y queda en la caché de runtime (PWA: el offline funciona desde la 2ª visita).
 	await page.reload({ waitUntil: 'networkidle' });
-	await page.waitForSelector('.tarjeta');
+	await page.waitForSelector('.book');
 	await page.waitForTimeout(500);
 
 	// 2) Offline: recargar la biblioteca (servida desde la caché de navegación).
 	await context.setOffline(true);
 	await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
-	await page.waitForSelector('.tarjeta', { timeout: 8000 });
-	check(await page.locator('.tarjeta').count() > 0, 'biblioteca carga offline con el libro');
+	await page.waitForSelector('.book', { timeout: 8000 });
+	check((await page.locator('.book').count()) > 0, 'biblioteca carga offline con el libro');
 
 	// 3) Offline: abrir el lector (ruta dinámica vía navigateFallback + IndexedDB).
-	await page.click('.tarjeta');
-	await page.waitForSelector('.foco .oracion.actual', { timeout: 8000 });
-	const oracion = await page.textContent('.oracion.actual');
+	await page.click('.book');
+	await page.waitForSelector('.reader .sentence.active', { timeout: 8000 });
+	const oracion = await page.textContent('.sentence.active');
 	check(!!oracion, `lector abre offline (oración: ${oracion})`);
 } catch (e) {
 	fallos.push(`excepción: ${e.message}`);

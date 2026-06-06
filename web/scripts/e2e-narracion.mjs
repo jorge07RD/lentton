@@ -1,5 +1,5 @@
-// E2E de narración (Fase 5): clic en play -> Kokoro reproduce y AVANZA solo.
-// Requiere: app servida en BASE_URL y server TTS en marcha (API_URL del front -> :8000).
+// E2E de narración (diseño nuevo): play central -> Kokoro reproduce y AVANZA solo.
+// Requiere app en BASE_URL y server TTS en marcha (:8000).
 import { chromium } from 'playwright-core';
 import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -16,10 +16,10 @@ const browser = await chromium.launch({
 	headless: true,
 	args: ['--autoplay-policy=no-user-gesture-required']
 });
-const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
+const page = await browser.newPage({ viewport: { width: 1000, height: 720 } });
 const fallos = [];
 const errores = [];
-const BENIGNOS = /favicon\.ico|manifest\.webmanifest/;
+const BENIGNOS = /favicon\.ico|manifest\.webmanifest|fonts\.(googleapis|gstatic)/;
 page.on('console', (m) => {
 	if (m.type() === 'error' && !BENIGNOS.test(m.location()?.url ?? '') && !BENIGNOS.test(m.text()))
 		errores.push(m.text());
@@ -29,42 +29,41 @@ const check = (c, m) => !c && fallos.push(m);
 try {
 	await page.goto(BASE, { waitUntil: 'networkidle' });
 	await page.setInputFiles('input[type=file]', epubPath);
-	await page.waitForSelector('.tarjeta');
-	await page.click('.tarjeta');
-	await page.waitForSelector('.foco .oracion.actual');
+	await page.waitForSelector('.book');
+	await page.click('.book');
+	await page.waitForSelector('.reader .sentence.active');
 
-	const oracionInicial = await page.textContent('.oracion.actual');
+	const o0 = await page.textContent('.sentence.active');
 
-	// Clic en play (gesto de usuario => Kokoro descarga y reproduce).
-	await page.click('.play');
-	// El icono debe pasar a "pausa".
-	await page.waitForFunction(() => document.querySelector('.play')?.textContent?.includes('⏸'), {
-		timeout: 5000
-	});
+	// Play central (gesto de usuario => Kokoro descarga y reproduce).
+	await page.click('.center-play');
+	await page.waitForSelector('.center-play.playing', { timeout: 5000 });
 
-	// Esperar a que la oración actual cambie SOLA (auto-avance al terminar el audio).
+	// Auto-avance: la oración activa cambia sola al terminar el audio.
 	await page.waitForFunction(
-		(prev) => document.querySelector('.oracion.actual')?.textContent !== prev,
-		oracionInicial,
+		(prev) => document.querySelector('.sentence.active')?.textContent !== prev,
+		o0,
 		{ timeout: 30000 }
 	);
-	const oracionTras = await page.textContent('.oracion.actual');
-	check(oracionTras !== oracionInicial, `avanzó solo: "${oracionInicial}" -> "${oracionTras}"`);
+	const o1 = await page.textContent('.sentence.active');
+	check(o1 !== o0, `avanzó solo: "${o0?.trim()}" -> "${o1?.trim()}"`);
 
-	// Pausar y comprobar que el icono vuelve a play.
-	await page.click('.play');
-	await page.waitForFunction(() => document.querySelector('.play')?.textContent?.includes('▶'), {
-		timeout: 5000
-	});
+	// Pausar.
+	await page.click('.center-play');
+	await page.waitForFunction(
+		() => !document.querySelector('.center-play')?.classList.contains('playing'),
+		null,
+		{ timeout: 5000 }
+	);
 
-	// Cambiar de proveedor en caliente (desde el panel de ajustes) no debe romper.
-	await page.click('button[title="Ajustes"]');
-	await page.waitForSelector('.panel select');
-	await page.selectOption('.panel select >> nth=0', 'webspeech');
+	// Cambiar de proveedor en caliente desde el sheet de ajustes.
+	await page.click('button[title="Ajustes de voz"]');
+	await page.waitForSelector('.sheet.in');
+	await page.click('[data-voz="webspeech"]');
 	await page.waitForTimeout(300);
 	check(
-		(await page.locator('.panel select').first().inputValue()) === 'webspeech',
-		'cambió a webspeech'
+		await page.locator('[data-voz="webspeech"]').evaluate((el) => el.classList.contains('on')),
+		'cambió a la voz del navegador'
 	);
 } catch (e) {
 	fallos.push(`excepción: ${e.message}`);

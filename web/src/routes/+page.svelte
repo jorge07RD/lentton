@@ -3,21 +3,41 @@
 	import { parseEpub } from '$lib/epub/parseEpub';
 	import { getAllBooks, saveBook, getPosition, savePosition, deleteBook } from '$lib/db';
 	import { fraccionProgreso } from '$lib/progress';
+	import { temaActual, alternarTema } from '$lib/theme.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import type { Book } from '$lib/types';
 
-	interface FilaLibro {
+	// Paletas tipográficas para portadas sin imagen (del handoff): [fondo, tinta].
+	const PALETAS: [string, string][] = [
+		['#3f5848', '#eef2ea'],
+		['#9a5b43', '#fbeee6'],
+		['#27303a', '#e9edf2'],
+		['#5a3f54', '#f3e9f0'],
+		['#a9853e', '#fbf3df'],
+		['#46555c', '#eaf1f3'],
+		['#8a4a3a', '#f8e9e3'],
+		['#2f5340', '#e7f0e9'],
+		['#2d5a55', '#e4f1ef']
+	];
+	function paleta(id: string): [string, string] {
+		let h = 0;
+		for (const c of id) h = (h + c.charCodeAt(0)) % PALETAS.length;
+		return PALETAS[h];
+	}
+
+	interface Fila {
 		book: Book;
-		progreso: number; // 0..1
+		progreso: number;
 		coverUrl: string | null;
 	}
 
-	let filas = $state<FilaLibro[]>([]);
+	let filas = $state<Fila[]>([]);
 	let cargando = $state(true);
 	let parseando = $state(false);
 	let error = $state('');
+	let input: HTMLInputElement;
 
 	async function cargarBiblioteca() {
-		// Revocar URLs previas para no fugar memoria.
 		for (const f of filas) if (f.coverUrl) URL.revokeObjectURL(f.coverUrl);
 		const libros = await getAllBooks();
 		filas = await Promise.all(
@@ -37,17 +57,19 @@
 		cargarBiblioteca();
 	});
 
+	const leyendo = $derived(filas.filter((f) => f.progreso > 0 && f.progreso < 1));
+	const resto = $derived(filas.filter((f) => f.progreso === 0 || f.progreso >= 1));
+
 	async function alSubir(e: Event) {
-		const input = e.target as HTMLInputElement;
-		const file = input.files?.[0];
-		input.value = ''; // permitir resubir el mismo archivo
+		const el = e.target as HTMLInputElement;
+		const file = el.files?.[0];
+		el.value = '';
 		if (!file) return;
 		parseando = true;
 		error = '';
 		try {
 			const book = await parseEpub(file);
 			await saveBook(book);
-			// Si es nuevo, crear posición inicial; si ya existía, conservar la guardada.
 			if (!(await getPosition(book.id))) {
 				await savePosition({
 					bookId: book.id,
@@ -72,167 +94,134 @@
 	}
 </script>
 
-<header class="cabecera">
-	<h1>Lentton</h1>
-	<label class="boton-subir">
-		{parseando ? 'Parseando…' : '+ Añadir EPUB'}
-		<input type="file" accept=".epub,application/epub+zip" onchange={alSubir} hidden />
-	</label>
-</header>
+<input
+	bind:this={input}
+	class="hidden-file"
+	type="file"
+	accept=".epub,application/epub+zip"
+	onchange={alSubir}
+/>
 
-{#if error}<p class="error">Error: {error}</p>{/if}
-
-{#if cargando}
-	<p class="vacio">Cargando biblioteca…</p>
-{:else if filas.length === 0}
-	<p class="vacio">Tu biblioteca está vacía. Añadí un EPUB para empezar.</p>
-{:else}
-	<ul class="grilla">
-		{#each filas as fila (fila.book.id)}
-			<li>
-				<button class="tarjeta" onclick={() => goto(`/read/${fila.book.id}`)}>
-					<div class="cover" class:sin-cover={!fila.coverUrl}>
-						{#if fila.coverUrl}
-							<img src={fila.coverUrl} alt="Portada de {fila.book.title}" />
-						{:else}
-							<span>{fila.book.title}</span>
-						{/if}
-					</div>
-					<div class="info">
-						<strong>{fila.book.title}</strong>
-						{#if fila.book.author}<span class="autor">{fila.book.author}</span>{/if}
-						<div class="barra"><div class="relleno" style:width="{fila.progreso * 100}%"></div></div>
-						<span class="pct">{Math.round(fila.progreso * 100)}%</span>
-					</div>
+<div class="library route">
+	<div class="lib-inner">
+		<div class="lib-head">
+			<div>
+				<div class="wordmark">lentton<span class="dot"></span></div>
+				<div class="lib-sub">Leé con la vista. O dejá que te lean.</div>
+			</div>
+			<div class="lib-actions">
+				<button class="iconbtn" title="Buscar" aria-label="Buscar"><Icon name="search" /></button>
+				<button class="iconbtn" onclick={alternarTema} title="Tema" aria-label="Tema">
+					<Icon name={temaActual() === 'dark' ? 'sun' : 'moon'} />
 				</button>
-				<button class="eliminar" title="Eliminar" onclick={(e) => eliminar(e, fila.book.id)}>✕</button>
-			</li>
-		{/each}
-	</ul>
-{/if}
+				<button
+					class="iconbtn"
+					onclick={() => input.click()}
+					title="Añadir EPUB"
+					aria-label="Añadir EPUB"
+				>
+					<Icon name="plus" />
+				</button>
+			</div>
+		</div>
 
-<style>
-	.cabecera {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		max-width: 60rem;
-		margin: 1.5rem auto;
-		padding: 0 1rem;
-	}
-	.cabecera h1 {
-		margin: 0;
-		font-family: system-ui, sans-serif;
-	}
-	.boton-subir {
-		cursor: pointer;
-		background: #111;
-		color: #fff;
-		padding: 0.6rem 1rem;
-		border-radius: 0.5rem;
-		font-size: 0.95rem;
-	}
-	.error {
-		max-width: 60rem;
-		margin: 0 auto;
-		padding: 0 1rem;
-		color: #b00020;
-	}
-	.vacio {
-		text-align: center;
-		color: #888;
-		margin-top: 4rem;
-		font-family: system-ui, sans-serif;
-	}
-	.grilla {
-		list-style: none;
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-		gap: 1.25rem;
-		max-width: 60rem;
-		margin: 0 auto;
-		padding: 1rem;
-	}
-	.grilla li {
-		position: relative;
-	}
-	.tarjeta {
-		display: block;
-		width: 100%;
-		text-align: left;
-		border: none;
-		background: none;
-		padding: 0;
-		cursor: pointer;
-		font-family: system-ui, sans-serif;
-	}
-	.cover {
-		aspect-ratio: 2 / 3;
-		border-radius: 0.4rem;
-		overflow: hidden;
-		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
-		background: #ddd;
-	}
-	.cover img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-	}
-	.cover.sin-cover {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		text-align: center;
-		padding: 0.5rem;
-		background: linear-gradient(135deg, #4a4a6a, #2a2a3a);
-		color: #fff;
-		font-weight: 600;
-		font-size: 0.85rem;
-	}
-	.info {
-		margin-top: 0.5rem;
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
-	}
-	.info strong {
-		font-size: 0.9rem;
-		line-height: 1.2;
-	}
-	.autor {
-		font-size: 0.8rem;
-		color: #777;
-	}
-	.barra {
-		height: 4px;
-		background: #e0e0e0;
-		border-radius: 2px;
-		margin-top: 0.3rem;
-		overflow: hidden;
-	}
-	.relleno {
-		height: 100%;
-		background: #4a7;
-	}
-	.pct {
-		font-size: 0.75rem;
-		color: #999;
-	}
-	.eliminar {
-		position: absolute;
-		top: 0.3rem;
-		right: 0.3rem;
-		border: none;
-		background: rgba(0, 0, 0, 0.6);
-		color: #fff;
-		border-radius: 50%;
-		width: 1.6rem;
-		height: 1.6rem;
-		cursor: pointer;
-		opacity: 0;
-		transition: opacity 0.15s;
-	}
-	.grilla li:hover .eliminar {
-		opacity: 1;
-	}
-</style>
+		{#if error}<p class="lib-sub" style="color:#b00020">Error: {error}</p>{/if}
+
+		{#if cargando}
+			<p class="lib-sub">Cargando biblioteca…</p>
+		{:else if filas.length === 0}
+			<div class="empty">
+				<div class="empty-inner route">
+					<div class="empty-mark">
+						<svg
+							viewBox="0 0 96 96"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.4"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
+							<path d="M20 26c8-4 18-4 28 0v46c-10-4-20-4-28 0V26Z" />
+							<path d="M76 26c-8-4-18-4-28 0v46c10-4 20-4 28 0V26Z" />
+							<path d="M48 26v46" opacity=".4" />
+						</svg>
+					</div>
+					<h2>Tu biblioteca espera</h2>
+					<p>
+						{parseando
+							? 'Parseando…'
+							: 'Todavía no hay nada para leer. Añadí un libro y dejá que las palabras —y la voz— hagan el resto.'}
+					</p>
+					<button class="btn btn-accent" onclick={() => input.click()}>
+						<Icon name="plus" /> Añadir un libro
+					</button>
+				</div>
+			</div>
+		{:else}
+			{#if leyendo.length > 0}
+				<div class="lib-section-label meta">Seguir leyendo</div>
+				<div class="grid" style="margin-bottom:48px">
+					{#each leyendo as fila (fila.book.id)}
+						{@render tarjeta(fila)}
+					{/each}
+				</div>
+			{/if}
+
+			<div class="lib-section-label meta">Tu estantería</div>
+			<div class="grid">
+				{#each resto as fila (fila.book.id)}
+					{@render tarjeta(fila)}
+				{/each}
+			</div>
+		{/if}
+	</div>
+</div>
+
+{#snippet tarjeta(fila: Fila)}
+	{@const pct = Math.round(fila.progreso * 100)}
+	{@const fresh = fila.progreso === 0}
+	{@const done = fila.progreso >= 1}
+	{@const pal = paleta(fila.book.id)}
+	<div class="book-cell">
+		<button
+			class="book"
+			class:book-unread={fresh}
+			onclick={() => goto(`/read/${fila.book.id}`)}
+		>
+			{#if fila.coverUrl}
+				<div class="cover has-img">
+					<img class="cover-img" src={fila.coverUrl} alt="Portada de {fila.book.title}" />
+				</div>
+			{:else}
+				<div class="cover" style="background:{pal[0]};color:{pal[1]}">
+					<div></div>
+					<div>
+						<div class="cover-title">{fila.book.title}</div>
+						<div class="cover-rule"></div>
+						{#if fila.book.author}<div class="cover-author" style="margin-top:9px">{fila.book.author}</div>{/if}
+					</div>
+				</div>
+			{/if}
+			<div class="book-meta">
+				<div>
+					<div class="book-title">{fila.book.title}</div>
+					{#if fila.book.author}<div class="book-author">{fila.book.author}</div>{/if}
+				</div>
+				<div class="progress">
+					<div class="progress-track">
+						<div class="progress-fill" style:width="{fresh ? 0 : pct}%"></div>
+					</div>
+					<div class="progress-pct">{done ? '✓' : fresh ? 'Nuevo' : pct + '%'}</div>
+				</div>
+			</div>
+		</button>
+		<button
+			class="book-del"
+			title="Eliminar"
+			aria-label="Eliminar"
+			onclick={(e) => eliminar(e, fila.book.id)}
+		>
+			<Icon name="close" />
+		</button>
+	</div>
+{/snippet}
