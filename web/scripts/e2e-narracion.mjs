@@ -57,10 +57,15 @@ try {
 		timeout: 5000
 	});
 
-	// Cambiar de proveedor en caliente no debe romper.
-	await page.selectOption('.proveedor', 'webspeech');
+	// Cambiar de proveedor en caliente (desde el panel de ajustes) no debe romper.
+	await page.click('button[title="Ajustes"]');
+	await page.waitForSelector('.panel select');
+	await page.selectOption('.panel select >> nth=0', 'webspeech');
 	await page.waitForTimeout(300);
-	check((await page.locator('.proveedor').inputValue()) === 'webspeech', 'cambió a webspeech');
+	check(
+		(await page.locator('.panel select').first().inputValue()) === 'webspeech',
+		'cambió a webspeech'
+	);
 } catch (e) {
 	fallos.push(`excepción: ${e.message}`);
 } finally {

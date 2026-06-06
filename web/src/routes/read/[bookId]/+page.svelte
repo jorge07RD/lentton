@@ -2,7 +2,8 @@
 	// Fase 5: lectura con foco + narración encadenada (Kokoro / Web Speech) con prefetch.
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { getBook, getPosition, savePosition, getSettings, type Settings } from '$lib/db';
+	import { getBook, getPosition, savePosition, getSettings, saveSettings, type Settings } from '$lib/db';
+	import { getVoices, VOCES_FALLBACK, type Voice } from '$lib/api';
 	import { debounce } from '$lib/debounce';
 	import { aplanar, type OracionPlana } from '$lib/progress';
 	import { Narrador } from '$lib/narration/controller.svelte';
@@ -22,6 +23,11 @@
 	let prefiereOscuro = $state(false);
 	let chromeVisible = $state(true);
 	let opts = $state<{ voice: string; speed: number }>({ voice: 'ef_dora', speed: 1 });
+	let proveedorId = $state<'kokoro' | 'webspeech'>('kokoro');
+	let voces = $state<Voice[]>(VOCES_FALLBACK);
+	let mostrarAjustes = $state(false);
+	let mostrarAyuda = $state(false);
+	let listo = $state(false); // evita persistir settings durante la carga inicial
 
 	// Proveedores (se crean una vez en el navegador).
 	const proveedores: Record<string, NarrationProvider> = {};
@@ -53,6 +59,7 @@
 
 			proveedores.kokoro = new KokoroProvider();
 			proveedores.webspeech = new WebSpeechProvider();
+			proveedorId = settings.provider;
 			const inicial = proveedores[settings.provider] ?? proveedores.kokoro;
 			const n = new Narrador(inicial, opts);
 			n.setContenido(
@@ -64,7 +71,24 @@
 			planas = lista;
 			narrador = n;
 			cargando = false;
+			listo = true;
+
+			// Cargar voces del servidor en segundo plano (no bloquea la lectura).
+			getVoices().then((v) => v.length && (voces = v));
 		})();
+	});
+
+	// Persistir preferencias cuando cambian (con debounce para el slider de velocidad).
+	const guardarSettings = debounce((s: Settings) => saveSettings(s), 300);
+	$effect(() => {
+		if (!listo) return;
+		const s: Settings = {
+			theme: tema,
+			provider: proveedorId,
+			voice: opts.voice,
+			speed: opts.speed
+		};
+		guardarSettings(s);
 	});
 
 	// Preferencia de color del sistema (para tema 'auto').
@@ -139,6 +163,17 @@
 
 	function onKey(e: KeyboardEvent) {
 		if (!narrador) return;
+		// '?' abre/cierra la ayuda; Escape cierra cualquier overlay.
+		if (e.key === '?') {
+			e.preventDefault();
+			mostrarAyuda = !mostrarAyuda;
+			return;
+		}
+		if (e.key === 'Escape') {
+			mostrarAyuda = false;
+			mostrarAjustes = false;
+			return;
+		}
 		switch (e.key) {
 			case ' ':
 				e.preventDefault();
@@ -169,7 +204,19 @@
 	}
 
 	function cambiarProveedor(id: string) {
-		if (narrador && proveedores[id]) narrador.setProvider(proveedores[id]);
+		if (narrador && proveedores[id]) {
+			proveedorId = id as 'kokoro' | 'webspeech';
+			narrador.setProvider(proveedores[id]);
+		}
+	}
+
+	function setVoz(v: string) {
+		opts = { ...opts, voice: v };
+		narrador?.setOpts(opts);
+	}
+	function setVelocidad(v: number) {
+		opts = { ...opts, speed: v };
+		narrador?.setOpts(opts);
 	}
 </script>
 
@@ -185,20 +232,51 @@
 			<button class="icono" onclick={() => goto('/')} title="Biblioteca">←</button>
 			<span class="cap">{actual?.chapterTitle}</span>
 			<div class="acciones">
-				<select
-					class="proveedor"
-					value={narrador.providerId}
-					onchange={(e) => cambiarProveedor(e.currentTarget.value)}
-					title="Proveedor de voz"
-				>
-					<option value="kokoro">Kokoro</option>
-					<option value="webspeech">Navegador</option>
-				</select>
 				<button class="icono" onclick={ciclarTema} title="Tema: {tema}">
 					{tema === 'dark' ? '🌙' : tema === 'light' ? '☀️' : '🌓'}
 				</button>
+				<button class="icono" onclick={() => (mostrarAyuda = true)} title="Atajos (?)">?</button>
+				<button class="icono" onclick={() => (mostrarAjustes = !mostrarAjustes)} title="Ajustes">
+					⚙
+				</button>
 			</div>
 		</header>
+
+		<!-- Panel de ajustes (voz, velocidad, proveedor) -->
+		{#if mostrarAjustes}
+			<div class="panel">
+				<label>
+					Proveedor
+					<select value={proveedorId} onchange={(e) => cambiarProveedor(e.currentTarget.value)}>
+						<option value="kokoro">Kokoro (servidor)</option>
+						<option value="webspeech">Voz del navegador</option>
+					</select>
+				</label>
+				<label>
+					Voz
+					<select
+						value={opts.voice}
+						onchange={(e) => setVoz(e.currentTarget.value)}
+						disabled={proveedorId !== 'kokoro'}
+					>
+						{#each voces as v (v.id)}
+							<option value={v.id}>{v.id} ({v.gender === 'f' ? '♀' : '♂'})</option>
+						{/each}
+					</select>
+				</label>
+				<label>
+					Velocidad: {opts.speed.toFixed(2)}×
+					<input
+						type="range"
+						min="0.5"
+						max="2"
+						step="0.05"
+						value={opts.speed}
+						oninput={(e) => setVelocidad(Number(e.currentTarget.value))}
+					/>
+				</label>
+			</div>
+		{/if}
 
 		<div class="foco">
 			{#each ventana as item (item.i)}
@@ -230,6 +308,30 @@
 				<span>~{minutosRestantes} min restantes</span>
 			</div>
 		</footer>
+
+		<!-- Overlay de ayuda con atajos de teclado -->
+		{#if mostrarAyuda}
+			<div
+				class="overlay"
+				role="button"
+				tabindex="0"
+				onclick={() => (mostrarAyuda = false)}
+				onkeydown={(e) => e.key === 'Enter' && (mostrarAyuda = false)}
+			>
+				<div class="ayuda">
+					<h2>Atajos de teclado</h2>
+					<dl>
+						<dt>Espacio</dt><dd>Reproducir / pausar</dd>
+						<dt>→ / ←</dt><dd>Oración siguiente / anterior</dd>
+						<dt>↓ / ↑</dt><dd>Capítulo siguiente / anterior</dd>
+						<dt>Clic en oración</dt><dd>Saltar a esa oración</dd>
+						<dt>?</dt><dd>Mostrar / ocultar esta ayuda</dd>
+						<dt>Esc</dt><dd>Cerrar</dd>
+					</dl>
+					<p class="cerrar">Hacé clic o pulsá Esc para cerrar</p>
+				</div>
+			</div>
+		{/if}
 	</div>
 {/if}
 
@@ -289,14 +391,6 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-	}
-	.proveedor {
-		background: transparent;
-		color: var(--muted);
-		border: 1px solid color-mix(in srgb, var(--muted) 40%, transparent);
-		border-radius: 0.4rem;
-		padding: 0.2rem 0.4rem;
-		font-size: 0.8rem;
 	}
 	.icono {
 		background: none;
@@ -378,6 +472,74 @@
 	.play.oculto {
 		opacity: 0;
 		pointer-events: none;
+	}
+	.panel {
+		position: absolute;
+		top: 3.2rem;
+		right: 1rem;
+		z-index: 4;
+		background: var(--bg);
+		border: 1px solid color-mix(in srgb, var(--muted) 40%, transparent);
+		border-radius: 0.6rem;
+		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+		padding: 1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.9rem;
+		min-width: 14rem;
+		font-family: system-ui, sans-serif;
+		font-size: 0.85rem;
+	}
+	.panel label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		color: var(--fg);
+	}
+	.panel select,
+	.panel input[type='range'] {
+		width: 100%;
+	}
+	.overlay {
+		position: absolute;
+		inset: 0;
+		z-index: 5;
+		background: rgba(0, 0, 0, 0.55);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-family: system-ui, sans-serif;
+	}
+	.ayuda {
+		background: var(--bg);
+		color: var(--fg);
+		border-radius: 0.8rem;
+		padding: 1.5rem 2rem;
+		max-width: 22rem;
+	}
+	.ayuda h2 {
+		margin-top: 0;
+	}
+	.ayuda dl {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 0.5rem 1rem;
+		margin: 0;
+	}
+	.ayuda dt {
+		font-weight: 600;
+		white-space: nowrap;
+	}
+	.ayuda dd {
+		margin: 0;
+		color: var(--muted);
+	}
+	.cerrar {
+		margin-bottom: 0;
+		margin-top: 1.2rem;
+		font-size: 0.78rem;
+		color: var(--muted);
+		text-align: center;
 	}
 	@media (max-width: 600px) {
 		.oracion {

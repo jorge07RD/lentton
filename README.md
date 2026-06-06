@@ -41,4 +41,15 @@ La URL del servidor se configura con `PUBLIC_API_URL` (ver `web/.env.example`).
 - [x] **Fase 3** — UI de foco (lectura sin audio) (`npm run test:e2e` con server arriba)
 - [x] **Fase 4** — Backend TTS con kokoro-onnx (`/tts` WAV, `/voices`, caché)
 - [x] **Fase 5** — Integración de narración (Kokoro/Web Speech + prefetch) (`npm run test:narracion`)
-- [ ] Fase 6 — Pulido (PWA offline, velocidad, voz, ayuda)
+- [x] **Fase 6** — Pulido: velocidad/voz persistidas, PWA offline, ayuda (`?`)
+
+## Pruebas
+
+```bash
+cd web
+npm run test:epub        # parser de EPUB (tsx + linkedom)
+npm run test:e2e         # biblioteca + lector (requiere dev en :5173)
+npm run test:pulido      # persistencia de prefs + ayuda (dev :5173)
+npm run test:narracion   # auto-avance con Kokoro (dev :5173 + TTS :8000)
+npm run test:offline     # PWA offline (requiere preview en :4173)
+```

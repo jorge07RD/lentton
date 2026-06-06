@@ -5,9 +5,21 @@ import { defineConfig } from 'vite';
 export default defineConfig({
 	plugins: [
 		sveltekit(),
-		// PWA: por ahora manifest minimo + autoUpdate. El precache offline real se afina en la Fase 6.
+		// PWA: precache del shell + fallback de navegación para que la app y los
+		// libros guardados (IndexedDB) abran sin conexión. Web Speech es la voz offline.
 		SvelteKitPWA({
 			registerType: 'autoUpdate',
+			workbox: {
+				// Precachear los assets construidos (JS/CSS/iconos).
+				globPatterns: ['**/*.{js,css,svg,ico,png,woff,woff2,webmanifest}'],
+				// El index.html (fallback SPA) lo escribe adapter-static DESPUÉS de vite-pwa,
+				// así que no entra por glob. Lo añadimos a mano: workbox lo descarga ('/')
+				// al instalar y navigateFallback lo sirve para cualquier ruta offline.
+				additionalManifestEntries: [{ url: '/', revision: `${Date.now()}` }],
+				navigateFallback: '/',
+				// No usar el fallback para las peticiones al servidor TTS.
+				navigateFallbackDenylist: [/^\/tts/, /^\/voices/, /^\/health/]
+			},
 			manifest: {
 				name: 'Lentton — Lector con foco',
 				short_name: 'Lentton',
