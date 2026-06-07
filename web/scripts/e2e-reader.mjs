@@ -65,7 +65,14 @@ try {
 	const opFull = await page.locator('.sentence').last().evaluate((el) => getComputedStyle(el).opacity);
 	check(Number(opFull) > 0.6, `en completo la oración lejana es visible (op=${opFull})`);
 	await captura('3-completo');
-	await page.keyboard.press('f'); // volver a foco
+
+	// 4 bis) Tercer modo: Libro (hoja paginada con número de página)
+	await page.keyboard.press('f');
+	await page.waitForSelector('.reader.mode-book .leaf', { timeout: 3000 });
+	const pie = await page.locator('.leaf-foot').innerText();
+	check(/pág/i.test(pie), `el modo libro muestra número de página (${pie})`);
+	await captura('4-libro');
+	await page.keyboard.press('f'); // libro -> foco
 
 	// 5) Avanzar con ArrowRight cambia la oración activa
 	const o0 = await page.textContent('.sentence.active');

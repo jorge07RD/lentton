@@ -19,11 +19,18 @@
 	const WPM = 185; // palabras por minuto (estimación de tiempo)
 	const MUESTRA = 'Los ojos verdes, una leyenda.';
 
+	type Modo = 'foco' | 'completo' | 'libro';
+	const ETIQUETA_MODO: Record<Modo, string> = {
+		foco: 'Modo foco',
+		completo: 'Página completa',
+		libro: 'Modo libro'
+	};
+
 	let book = $state<Book | null>(null);
 	let planas = $state<OracionPlana[]>([]);
 	let narrador = $state<Narrador | null>(null);
 	let cargando = $state(true);
-	let modo = $state<'foco' | 'completo'>('foco');
+	let modo = $state<Modo>('foco');
 	let opts = $state<{ voice: string; speed: number }>({ voice: 'ef_dora', speed: 1 });
 	let proveedorId = $state<'kokoro' | 'webspeech'>('kokoro');
 	let voces = $state<Voice[]>(VOCES_FALLBACK);
@@ -91,7 +98,9 @@
 	const idx = $derived(narrador?.idx ?? 0);
 	const actual = $derived(planas[idx]);
 	const reproduciendo = $derived(narrador?.estado === 'playing');
-	const claseModo = $derived(modo === 'completo' ? 'mode-full' : 'mode-focus');
+	const claseModo = $derived(
+		modo === 'completo' ? 'mode-full' : modo === 'libro' ? 'mode-book' : 'mode-focus'
+	);
 
 	$effect(() => {
 		const o = planas[idx];
@@ -106,6 +115,62 @@
 	const parrafos = $derived<Parrafo[]>(
 		book && actual ? parrafosDeCapitulo(book, actual.chapterIndex) : []
 	);
+
+	// --- Modo Libro: paginación por palabras ---
+	const PAGINA_PALABRAS = 230;
+	// Índices globales donde empieza un párrafo (para reagrupar en la hoja).
+	const inicioParrafo = $derived.by(() => {
+		const s = new Set<number>();
+		if (!book) return s;
+		let base = 0;
+		for (const cap of book.chapters) {
+			const st = cap.paraStarts?.length ? cap.paraStarts : [0];
+			for (const k of st) s.add(base + k);
+			base += cap.sentences.length;
+		}
+		return s;
+	});
+	// Páginas: cada una es una lista de índices globales de oración.
+	const paginasLibro = $derived.by(() => {
+		const out: number[][] = [];
+		let cur: number[] = [];
+		let w = 0;
+		for (let i = 0; i < planas.length; i++) {
+			// Cortar página en un límite de párrafo si ya pasamos el presupuesto.
+			if (w >= PAGINA_PALABRAS && inicioParrafo.has(i) && cur.length) {
+				out.push(cur);
+				cur = [];
+				w = 0;
+			}
+			cur.push(i);
+			w += contarPalabras(planas[i].texto);
+		}
+		if (cur.length) out.push(cur);
+		return out;
+	});
+	const paginaLibroIdx = $derived(
+		Math.max(0, paginasLibro.findIndex((p) => idx >= p[0] && idx <= p[p.length - 1]))
+	);
+	// Párrafos de la página actual, reagrupados.
+	const paginaParrafos = $derived.by<Parrafo[]>(() => {
+		const pg = paginasLibro[paginaLibroIdx];
+		if (!pg) return [];
+		const paras: Parrafo[] = [];
+		let curr: Parrafo | null = null;
+		for (const gi of pg) {
+			if (curr === null || inicioParrafo.has(gi)) {
+				curr = { speaker: /^\s*[—«"“-]/.test(planas[gi].texto), sentences: [] };
+				paras.push(curr);
+			}
+			curr.sentences.push({ texto: planas[gi].texto, gi });
+		}
+		return paras;
+	});
+	function irPaginaLibro(delta: number) {
+		const p = paginaLibroIdx + delta;
+		if (p >= 0 && p < paginasLibro.length) narrador?.irA(paginasLibro[p][0]);
+		despertar();
+	}
 
 	// --- Matemática de progreso ---
 	function contarPalabras(s: string): number {
@@ -151,7 +216,7 @@
 			behavior: suave ? 'smooth' : 'auto'
 		});
 	}
-	let modoPrevio: 'foco' | 'completo' | null = null;
+	let modoPrevio: Modo | null = null;
 	let idxPrevio = -1;
 	$effect(() => {
 		const cambioModo = modo !== modoPrevio;
@@ -159,7 +224,7 @@
 		void parrafos.length;
 		modoPrevio = modo;
 		idxPrevio = idx;
-		if (!scrollEl) return;
+		if (modo === 'libro' || !scrollEl) return; // el modo libro pagina, no centra por scroll
 
 		// Solo cambió el modo: la letra y la viñeta animan ~0.6s; un único re-centrado
 		// suave al final (sin scroll inmediato que pelee con la animación).
@@ -198,10 +263,15 @@
 		toast = msg;
 		setTimeout(() => (toast === msg ? (toast = '') : null), 1500);
 	}
-	function alternarModo() {
-		modo = modo === 'foco' ? 'completo' : 'foco';
-		flash(modo === 'foco' ? 'Modo foco' : 'Página completa');
+	function setModo(m: Modo) {
+		if (modo === m) return;
+		modo = m;
+		flash(ETIQUETA_MODO[m]);
 		despertar();
+	}
+	function ciclarModo() {
+		const orden: Modo[] = ['foco', 'completo', 'libro'];
+		setModo(orden[(orden.indexOf(modo) + 1) % orden.length]);
 	}
 
 	function onSurfaceClick(e: MouseEvent) {
@@ -227,7 +297,7 @@
 		}
 		if (e.key === 'f' || e.key === 'F') {
 			e.preventDefault();
-			alternarModo();
+			ciclarModo();
 			return;
 		}
 		if (e.code === 'Space') {
@@ -341,35 +411,78 @@
 		class:chrome-hidden={chromeHidden}
 		class:hide-cursor={chromeHidden && reproduciendo}
 	>
-		<!-- Superficie de lectura -->
-		<div
-			class="read-scroll"
-			bind:this={scrollEl}
-			onclick={onSurfaceClick}
-			onkeydown={() => {}}
-			role="presentation"
-		>
-			<div class="read-col">
-				{#each parrafos as p, pi (pi)}
-					<p class:speaker={p.speaker}>
-						{#each p.sentences as s (s.gi)}<span
-								class="sentence"
-								class:active={s.gi === idx}
-								data-gi={s.gi}
-								style:--o={opacidad(s.gi)}
-								role="button"
-								tabindex="-1"
-								onclick={(e) => {
-									e.stopPropagation();
-									despertar();
-									narrador?.irA(s.gi);
-								}}
-								onkeydown={() => {}}>{s.texto} </span
-							>{/each}
-					</p>
-				{/each}
+		{#if modo === 'libro'}
+			<!-- Modo libro: hoja de papel paginada -->
+			<div class="book-stage">
+				<button
+					class="leaf-nav prev"
+					title="Página anterior"
+					aria-label="Página anterior"
+					disabled={paginaLibroIdx <= 0}
+					onclick={() => irPaginaLibro(-1)}><Icon name="prev" /></button
+				>
+				{#key paginaLibroIdx}
+					<article class="leaf turn">
+						{#each paginaParrafos as p, pi (pi)}
+							<p class:speaker={p.speaker}>
+								{#each p.sentences as s (s.gi)}<span
+										class="sentence"
+										class:active={s.gi === idx}
+										data-gi={s.gi}
+										role="button"
+										tabindex="-1"
+										onclick={() => {
+											despertar();
+											narrador?.irA(s.gi);
+										}}
+										onkeydown={() => {}}>{s.texto} </span
+									>{/each}
+							</p>
+						{/each}
+						<div class="leaf-foot meta">
+							{actual?.chapterTitle} · pág {paginaLibroIdx + 1} / {paginasLibro.length}
+						</div>
+					</article>
+				{/key}
+				<button
+					class="leaf-nav next"
+					title="Página siguiente"
+					aria-label="Página siguiente"
+					disabled={paginaLibroIdx >= paginasLibro.length - 1}
+					onclick={() => irPaginaLibro(1)}><Icon name="next" /></button
+				>
 			</div>
-		</div>
+		{:else}
+			<!-- Superficie de lectura (foco / página completa) -->
+			<div
+				class="read-scroll"
+				bind:this={scrollEl}
+				onclick={onSurfaceClick}
+				onkeydown={() => {}}
+				role="presentation"
+			>
+				<div class="read-col">
+					{#each parrafos as p, pi (pi)}
+						<p class:speaker={p.speaker}>
+							{#each p.sentences as s (s.gi)}<span
+									class="sentence"
+									class:active={s.gi === idx}
+									data-gi={s.gi}
+									style:--o={opacidad(s.gi)}
+									role="button"
+									tabindex="-1"
+									onclick={(e) => {
+										e.stopPropagation();
+										despertar();
+										narrador?.irA(s.gi);
+									}}
+									onkeydown={() => {}}>{s.texto} </span
+								>{/each}
+						</p>
+					{/each}
+				</div>
+			</div>
+		{/if}
 
 		<!-- Franja lateral -->
 		<div class="rail">
@@ -405,14 +518,18 @@
 			</div>
 			<div class="chrome-grp">
 				<div class="modeswitch">
-					<button class={modo === 'foco' ? 'on' : ''} onclick={() => modo !== 'foco' && alternarModo()}>
+					<button class={modo === 'foco' ? 'on' : ''} onclick={() => setModo('foco')} title="Foco">
 						<Icon name="focus" /> Foco
 					</button>
 					<button
 						class={modo === 'completo' ? 'on' : ''}
-						onclick={() => modo !== 'completo' && alternarModo()}
+						onclick={() => setModo('completo')}
+						title="Página completa"
 					>
 						<Icon name="page" /> Página
+					</button>
+					<button class={modo === 'libro' ? 'on' : ''} onclick={() => setModo('libro')} title="Libro">
+						<Icon name="book" /> Libro
 					</button>
 				</div>
 				<button class="iconbtn" onclick={alternarTema} title="Tema" aria-label="Tema">

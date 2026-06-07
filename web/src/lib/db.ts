@@ -8,7 +8,7 @@ export interface Settings {
 	provider: 'kokoro' | 'webspeech';
 	voice: string;
 	speed: number; // 0.5 – 2.0
-	mode: 'foco' | 'completo'; // vista de lectura: foco u oración / página completa
+	mode: 'foco' | 'completo' | 'libro'; // vista: foco / página completa / libro físico paginado
 }
 
 export const SETTINGS_POR_DEFECTO: Settings = {

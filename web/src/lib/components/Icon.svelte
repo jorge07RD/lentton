@@ -12,6 +12,7 @@
 		| 'close'
 		| 'focus'
 		| 'page'
+		| 'book'
 		| 'sun'
 		| 'moon'
 		| 'plus'
@@ -64,6 +65,9 @@
 		{:else if name === 'page'}
 			<rect x="5" y="4" width="14" height="16" rx="1.6" />
 			<path d="M8.4 8.5h7.2M8.4 12h7.2M8.4 15.5h4.5" />
+		{:else if name === 'book'}
+			<path d="M5 4.5h9a2 2 0 0 1 2 2V20a1.6 1.6 0 0 0-1.6-1.6H5Z" />
+			<path d="M5 4.5v15.9" /><path d="M16 6.5h2.5a.8.8 0 0 1 .8.8v11.3" />
 		{:else if name === 'sun'}
 			<circle cx="12" cy="12" r="4" />
 			<path
