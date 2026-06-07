@@ -19,7 +19,10 @@ jobs:
 
       - name: Instalar dependencias
         working-directory: web
-        run: npm ci
+        # npm install (no `npm ci`): el runner usa otra versión de npm que la local
+        # y discrepan en deps opcionales por plataforma (@emnapi/*); `npm ci` es
+        # estricto con eso y falla. `npm install` tolera ese desfase del lockfile.
+        run: npm install
 
       - name: Build
         working-directory: web
