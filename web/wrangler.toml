@@ -7,10 +7,4 @@ compatibility_date = "2024-11-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "lentton"
-database_id = "local-placeholder"
-
-# Almacenamiento de archivos (contenido de los libros y portadas).
-#   wrangler r2 bucket create lentton-books
-[[r2_buckets]]
-binding = "BOOKS"
-bucket_name = "lentton-books"
+database_id = "0c8a7e3c-6d71-4edc-933a-62de812858d1"

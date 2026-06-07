@@ -1,10 +1,9 @@
 // API de sincronización de Lentton (Cloudflare Pages Functions).
-// Memoria compartida personal: D1 (SQLite) para metadatos/posición/ajustes y
-// R2 para el contenido de los libros y las portadas. Protegida por una clave.
+// Memoria compartida personal en D1 (SQLite): metadatos, contenido de libros
+// (JSON), portadas (base64), posiciones y ajustes. Protegida por una clave.
 
 interface Env {
 	DB: D1Database;
-	BOOKS: R2Bucket;
 	SYNC_KEY?: string;
 }
 
@@ -15,22 +14,6 @@ const json = (data: unknown, status = 200) =>
 		status,
 		headers: { 'content-type': 'application/json' }
 	});
-
-function abToBase64(buf: ArrayBuffer): string {
-	const bytes = new Uint8Array(buf);
-	let bin = '';
-	const chunk = 0x8000;
-	for (let i = 0; i < bytes.length; i += chunk) {
-		bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
-	}
-	return btoa(bin);
-}
-function base64ToAb(b64: string): ArrayBuffer {
-	const bin = atob(b64);
-	const bytes = new Uint8Array(bin.length);
-	for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-	return bytes.buffer;
-}
 
 export const onRequest = async (context: Ctx): Promise<Response> => {
 	const { request, env } = context;
@@ -66,17 +49,14 @@ export const onRequest = async (context: Ctx): Promise<Response> => {
 		// /api/book/:id
 		if (recurso === 'book' && id) {
 			if (m === 'GET') {
-				const obj = await env.BOOKS.get(`book/${id}.json`);
-				if (!obj) return json({ error: 'no existe' }, 404);
-				const book = JSON.parse(await obj.text());
-				const fila = await env.DB.prepare('SELECT coverType FROM books WHERE id=?')
+				const row = await env.DB.prepare(
+					'SELECT content,coverType,coverB64 FROM books WHERE id=?'
+				)
 					.bind(id)
-					.first<{ coverType: string | null }>();
-				let cover = null;
-				if (fila?.coverType) {
-					const c = await env.BOOKS.get(`cover/${id}`);
-					if (c) cover = { type: fila.coverType, base64: abToBase64(await c.arrayBuffer()) };
-				}
+					.first<{ content: string; coverType: string | null; coverB64: string | null }>();
+				if (!row) return json({ error: 'no existe' }, 404);
+				const book = JSON.parse(row.content);
+				const cover = row.coverType && row.coverB64 ? { type: row.coverType, base64: row.coverB64 } : null;
 				return json({ ...book, cover });
 			}
 			if (m === 'PUT') {
@@ -86,26 +66,27 @@ export const onRequest = async (context: Ctx): Promise<Response> => {
 				};
 				const b = body.book;
 				const now = Date.now();
-				await env.BOOKS.put(`book/${id}.json`, JSON.stringify(b));
-				let coverType: string | null = null;
-				if (body.cover) {
-					await env.BOOKS.put(`cover/${id}`, base64ToAb(body.cover.base64), {
-						httpMetadata: { contentType: body.cover.type }
-					});
-					coverType = body.cover.type;
-				}
 				await env.DB.prepare(
-					`INSERT INTO books (id,title,author,addedAt,updatedAt,coverType)
-					 VALUES (?,?,?,?,?,?)
-					 ON CONFLICT(id) DO UPDATE SET title=excluded.title,author=excluded.author,updatedAt=excluded.updatedAt,coverType=excluded.coverType`
+					`INSERT INTO books (id,title,author,addedAt,updatedAt,content,coverType,coverB64)
+					 VALUES (?,?,?,?,?,?,?,?)
+					 ON CONFLICT(id) DO UPDATE SET title=excluded.title,author=excluded.author,
+					   updatedAt=excluded.updatedAt,content=excluded.content,
+					   coverType=excluded.coverType,coverB64=excluded.coverB64`
 				)
-					.bind(id, b.title, b.author ?? null, b.addedAt, now, coverType)
+					.bind(
+						id,
+						b.title,
+						b.author ?? null,
+						b.addedAt,
+						now,
+						JSON.stringify(b),
+						body.cover?.type ?? null,
+						body.cover?.base64 ?? null
+					)
 					.run();
 				return json({ ok: true, updatedAt: now });
 			}
 			if (m === 'DELETE') {
-				await env.BOOKS.delete(`book/${id}.json`);
-				await env.BOOKS.delete(`cover/${id}`);
 				await env.DB.prepare('DELETE FROM books WHERE id=?').bind(id).run();
 				await env.DB.prepare('DELETE FROM positions WHERE bookId=?').bind(id).run();
 				return json({ ok: true });

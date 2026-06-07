@@ -73,24 +73,25 @@ Queda como una app; los libros se guardan en el dispositivo y funciona sin conex
 Por defecto los libros viven en el dispositivo (IndexedDB). Para tener **memoria
 compartida** (subir un libro en la compu y seguir leyéndolo en el celu, con la
 posición y las preferencias sincronizadas) hay una API serverless con **Cloudflare
-D1** (SQLite) para metadatos/posición/ajustes y **R2** para el contenido de los
-libros. IndexedDB sigue siendo la caché local/offline; la sincronización es
-last-write-wins. Es para uso **personal**: se protege con una clave secreta.
+D1** (SQLite): guarda metadatos, contenido de los libros, posiciones y ajustes (sin
+R2, así no hace falta tarjeta). IndexedDB sigue siendo la caché local/offline; la
+sincronización es last-write-wins. Es para uso **personal**: se protege con una
+clave secreta (`SYNC_KEY`).
 
 ### Crear la base y desplegar
 
 ```bash
 cd web
 npx wrangler d1 create lentton          # copiá el database_id -> wrangler.toml
-npx wrangler r2 bucket create lentton-books
 npx wrangler d1 execute lentton --remote --file=./schema.sql   # crea las tablas
-npx wrangler pages secret put SYNC_KEY  # elegí una clave (la misma en tus dispositivos)
-npm run build && npx wrangler pages deploy build
+npx wrangler pages project create lentton --production-branch main
+printf "TU_CLAVE" | npx wrangler pages secret put SYNC_KEY --project-name lentton
+npm run build && npx wrangler pages deploy build --project-name lentton --branch main
 ```
 
-> Si conectás el repo por Git en vez de `wrangler deploy`, configurá los bindings
-> **D1 (DB)** y **R2 (BOOKS)** y el secreto **SYNC_KEY** en el dashboard del proyecto
-> Pages → *Settings → Functions/Variables*.
+> Si conectás el repo por Git en vez de `wrangler deploy`, configurá el binding
+> **D1 (DB)** y el secreto **SYNC_KEY** en el dashboard del proyecto Pages →
+> *Settings → Functions/Variables*.
 
 ### Activar en cada dispositivo
 
