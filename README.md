@@ -33,6 +33,41 @@ npm run dev        # http://localhost:5173
 
 La URL del servidor se configura con `PUBLIC_API_URL` (ver `web/.env.example`).
 
+## Despliegue gratis (usar desde el celular)
+
+La app es una **PWA estática**: se sube gratis a Cloudflare Pages y se instala en el
+celular. Sin servidor, narra con la **voz del navegador** (Web Speech); si Kokoro no
+responde, la app **cae sola** a esa voz. La voz Kokoro de calidad solo está disponible
+cuando tengas el servidor encendido (local o donde lo hostees).
+
+### Opción A — Cloudflare Pages conectando el repo (recomendada)
+
+1. Subí el repo a GitHub.
+2. En Cloudflare → **Workers & Pages → Create → Pages → Connect to Git**, elegí el repo.
+3. Configurá el build:
+   - **Root directory:** `web`
+   - **Build command:** `npm run build`
+   - **Build output directory:** `build`
+   - (Opcional) Variable `PUBLIC_API_URL` con la URL de tu servidor TTS si tenés uno.
+4. Deploy. Te queda una URL `https://<algo>.pages.dev`.
+
+### Opción B — Subir la carpeta ya construida (sin Git)
+
+```bash
+cd web
+npm run build                 # genera web/build
+npx wrangler pages deploy build --project-name lentton
+```
+
+(O en Netlify: arrastrá la carpeta `web/build` a app.netlify.com/drop.)
+
+### Instalar en el celular
+
+Abrí la URL en el navegador del celu → menú → **“Agregar a pantalla de inicio”**.
+Queda como una app; los libros se guardan en el dispositivo y funciona sin conexión.
+
+> El `web/static/_redirects` ya deja resueltas las rutas internas (SPA) al recargar.
+
 ## Estado
 
 - [x] **Fase 0** — Scaffold (web + server + git, `/health`, CORS, PWA base)

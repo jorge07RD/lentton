@@ -13,10 +13,20 @@ export class Narrador {
 	private opts: SpeakOpts = {};
 	// "Época": cada salto / cambio de proveedor la incrementa para cancelar bucles viejos.
 	private epoca = 0;
+	// Proveedor de reserva (p.ej. Web Speech) si el principal falla (sin servidor).
+	private fallback?: NarrationProvider;
+	private onFallback?: () => void;
 
-	constructor(provider: NarrationProvider, opts: SpeakOpts) {
+	constructor(
+		provider: NarrationProvider,
+		opts: SpeakOpts,
+		fallback?: NarrationProvider,
+		onFallback?: () => void
+	) {
 		this.provider = provider;
 		this.opts = opts;
+		this.fallback = fallback;
+		this.onFallback = onFallback;
 	}
 
 	setContenido(textos: string[], idxInicial = 0): void {
@@ -57,6 +67,14 @@ export class Narrador {
 			try {
 				await this.provider.play(this.textos[i], this.opts);
 			} catch {
+				// Si el proveedor principal falla (p.ej. sin servidor Kokoro), pasamos
+				// a la voz del navegador y reintentamos la misma oración.
+				if (this.fallback && this.provider !== this.fallback) {
+					this.provider.stop();
+					this.provider = this.fallback;
+					this.onFallback?.();
+					continue;
+				}
 				break;
 			}
 

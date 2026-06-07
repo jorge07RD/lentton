@@ -71,7 +71,17 @@
 			proveedores.kokoro = new KokoroProvider();
 			proveedores.webspeech = new WebSpeechProvider();
 			proveedorId = s.provider;
-			const n = new Narrador(proveedores[s.provider] ?? proveedores.kokoro, opts);
+			// Si Kokoro no responde (sin servidor, p.ej. en el celu), caemos a la voz
+			// del navegador automáticamente para que la narración siga funcionando.
+			const n = new Narrador(
+				proveedores[s.provider] ?? proveedores.kokoro,
+				opts,
+				proveedores.webspeech,
+				() => {
+					proveedorId = 'webspeech';
+					flash('Sin servidor: voz del navegador');
+				}
+			);
 			n.setContenido(
 				lista.map((o) => o.texto),
 				inicio
