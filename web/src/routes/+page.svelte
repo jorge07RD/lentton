@@ -3,7 +3,16 @@
 	import { parseEpub } from '$lib/epub/parseEpub';
 	import { getAllBooks, saveBook, getPosition, savePosition, deleteBook } from '$lib/db';
 	import { fraccionProgreso } from '$lib/progress';
-	import { temaActual, alternarTema } from '$lib/theme.svelte';
+	import { temaActual, alternarTema, initTema } from '$lib/theme.svelte';
+	import {
+		sincronizar,
+		syncHabilitado,
+		getSyncKey,
+		setSyncKey,
+		pushBook,
+		pushPosition,
+		deleteRemoto
+	} from '$lib/sync';
 	import Icon from '$lib/components/Icon.svelte';
 	import type { Book } from '$lib/types';
 
@@ -35,6 +44,7 @@
 	let cargando = $state(true);
 	let parseando = $state(false);
 	let error = $state('');
+	let sincronizando = $state(false);
 	let input: HTMLInputElement;
 
 	async function cargarBiblioteca() {
@@ -54,8 +64,39 @@
 	}
 
 	$effect(() => {
-		cargarBiblioteca();
+		(async () => {
+			await cargarBiblioteca();
+			// Sincronizar en segundo plano con la memoria compartida (si hay clave).
+			await sincronizarYRefrescar();
+		})();
 	});
+
+	async function sincronizarYRefrescar() {
+		if (!syncHabilitado()) return;
+		sincronizando = true;
+		try {
+			const { cambios } = await sincronizar();
+			if (cambios) {
+				await initTema(); // por si llegaron prefs nuevas
+				await cargarBiblioteca();
+			}
+		} catch {
+			/* offline o API no disponible: seguimos con lo local */
+		} finally {
+			sincronizando = false;
+		}
+	}
+
+	async function configurarSync() {
+		const actual = getSyncKey();
+		const k = prompt(
+			'Clave de sincronización (la misma en todos tus dispositivos; vacío = desactivar):',
+			actual
+		);
+		if (k === null) return;
+		setSyncKey(k.trim());
+		await sincronizarYRefrescar();
+	}
 
 	const leyendo = $derived(filas.filter((f) => f.progreso > 0 && f.progreso < 1));
 	const resto = $derived(filas.filter((f) => f.progreso === 0 || f.progreso >= 1));
@@ -70,15 +111,13 @@
 		try {
 			const book = await parseEpub(file);
 			await saveBook(book);
-			if (!(await getPosition(book.id))) {
-				await savePosition({
-					bookId: book.id,
-					chapterIndex: 0,
-					sentenceIndex: 0,
-					updatedAt: Date.now()
-				});
+			let pos = await getPosition(book.id);
+			if (!pos) {
+				pos = { bookId: book.id, chapterIndex: 0, sentenceIndex: 0, updatedAt: Date.now() };
+				await savePosition(pos);
 			}
 			await cargarBiblioteca();
+			if (syncHabilitado()) pushBook(book).then(() => pos && pushPosition(pos));
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
 		} finally {
@@ -90,6 +129,7 @@
 		e.stopPropagation();
 		if (!confirm('¿Eliminar este libro de la biblioteca?')) return;
 		await deleteBook(id);
+		deleteRemoto(id);
 		await cargarBiblioteca();
 	}
 </script>
@@ -110,7 +150,16 @@
 				<div class="lib-sub">Leé con la vista. O dejá que te lean.</div>
 			</div>
 			<div class="lib-actions">
-				<button class="iconbtn" title="Buscar" aria-label="Buscar"><Icon name="search" /></button>
+				<button
+					class="iconbtn"
+					onclick={configurarSync}
+					title={syncHabilitado() ? 'Sincronización activa' : 'Configurar sincronización'}
+					aria-label="Sincronización"
+					style={syncHabilitado() ? 'color:var(--accent)' : ''}
+					class:girando={sincronizando}
+				>
+					<Icon name="cloud" />
+				</button>
 				<button class="iconbtn" onclick={alternarTema} title="Tema" aria-label="Tema">
 					<Icon name={temaActual() === 'dark' ? 'sun' : 'moon'} />
 				</button>

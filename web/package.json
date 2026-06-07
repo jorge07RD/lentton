@@ -15,7 +15,10 @@
 		"test:epub": "tsx scripts/smoke-epub.mjs",
 		"test:e2e": "node scripts/e2e-reader.mjs",
 		"test:narracion": "node scripts/e2e-narracion.mjs",
-		"test:offline": "node scripts/e2e-offline.mjs"
+		"test:offline": "node scripts/e2e-offline.mjs",
+		"test:sync": "node scripts/e2e-sync.mjs",
+		"cf:schema": "wrangler d1 execute lentton --local --file=./schema.sql",
+		"cf:dev": "wrangler pages dev --port 8788 --compatibility-date 2024-11-01"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",

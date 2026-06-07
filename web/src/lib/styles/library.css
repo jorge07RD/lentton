@@ -265,3 +265,7 @@
 	color: rgb(var(--ink-rgb) / 0.52);
 	font-style: italic;
 }
+
+/* icono de sync girando mientras sincroniza */
+@keyframes girar { to { transform: rotate(360deg); } }
+.iconbtn.girando svg { animation: girar 1s linear infinite; }

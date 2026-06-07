@@ -17,7 +17,8 @@
 		| 'moon'
 		| 'plus'
 		| 'search'
-		| 'volume';
+		| 'volume'
+		| 'cloud';
 
 	let { name }: { name: Nombre } = $props();
 </script>
@@ -82,6 +83,10 @@
 		{:else if name === 'volume'}
 			<path d="M5 9.5h3l4-3.2v11.4l-4-3.2H5z" />
 			<path d="M15.5 9.2a3.4 3.4 0 0 1 0 5.6" />
+		{:else if name === 'cloud'}
+			<path
+				d="M7 18a4 4 0 0 1-.5-7.97 5 5 0 0 1 9.6-1.2A3.7 3.7 0 0 1 17.5 18H7Z"
+			/>
 		{/if}
 	</svg>
 {/if}

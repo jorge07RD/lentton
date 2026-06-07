@@ -5,6 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { getBook, getPosition, savePosition, getSettings, saveSettings } from '$lib/db';
 	import { getVoices, VOCES_FALLBACK, API_URL, type Voice } from '$lib/api';
+	import { pushPosition, pushSettings } from '$lib/sync';
 	import { debounce } from '$lib/debounce';
 	import { aplanar, parrafosDeCapitulo, type OracionPlana, type Parrafo } from '$lib/progress';
 	import { Narrador } from '$lib/narration/controller.svelte';
@@ -96,13 +97,16 @@
 		})();
 	});
 
-	// --- Persistencia ---
+	// --- Persistencia (local + sync compartido) ---
 	const guardarPos = debounce((id: string, ci: number, si: number) => {
-		savePosition({ bookId: id, chapterIndex: ci, sentenceIndex: si, updatedAt: Date.now() });
+		const pos = { bookId: id, chapterIndex: ci, sentenceIndex: si, updatedAt: Date.now() };
+		savePosition(pos);
+		pushPosition(pos);
 	}, 500);
 	const guardarPrefs = debounce(async (patch: Record<string, unknown>) => {
 		const s = await getSettings();
 		await saveSettings({ ...s, ...patch });
+		pushSettings(await getSettings());
 	}, 300);
 
 	const idx = $derived(narrador?.idx ?? 0);

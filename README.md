@@ -68,6 +68,45 @@ Queda como una app; los libros se guardan en el dispositivo y funciona sin conex
 
 > El `web/static/_redirects` ya deja resueltas las rutas internas (SPA) al recargar.
 
+## Memoria compartida entre dispositivos (opcional)
+
+Por defecto los libros viven en el dispositivo (IndexedDB). Para tener **memoria
+compartida** (subir un libro en la compu y seguir leyéndolo en el celu, con la
+posición y las preferencias sincronizadas) hay una API serverless con **Cloudflare
+D1** (SQLite) para metadatos/posición/ajustes y **R2** para el contenido de los
+libros. IndexedDB sigue siendo la caché local/offline; la sincronización es
+last-write-wins. Es para uso **personal**: se protege con una clave secreta.
+
+### Crear la base y desplegar
+
+```bash
+cd web
+npx wrangler d1 create lentton          # copiá el database_id -> wrangler.toml
+npx wrangler r2 bucket create lentton-books
+npx wrangler d1 execute lentton --remote --file=./schema.sql   # crea las tablas
+npx wrangler pages secret put SYNC_KEY  # elegí una clave (la misma en tus dispositivos)
+npm run build && npx wrangler pages deploy build
+```
+
+> Si conectás el repo por Git en vez de `wrangler deploy`, configurá los bindings
+> **D1 (DB)** y **R2 (BOOKS)** y el secreto **SYNC_KEY** en el dashboard del proyecto
+> Pages → *Settings → Functions/Variables*.
+
+### Activar en cada dispositivo
+
+Abrí la app → icono de **nube** ☁ → ingresá la misma `SYNC_KEY`. Listo: los libros,
+la posición de lectura y las preferencias se comparten.
+
+### Probar la sincronización en local
+
+```bash
+cd web
+npm run build
+npm run cf:schema          # aplica el esquema a la D1 local
+npm run cf:dev             # app + /api con D1/R2 locales en http://localhost:8788
+# (clave local de prueba en web/.dev.vars: SYNC_KEY=clave-de-prueba-local)
+```
+
 ## Estado
 
 - [x] **Fase 0** — Scaffold (web + server + git, `/health`, CORS, PWA base)

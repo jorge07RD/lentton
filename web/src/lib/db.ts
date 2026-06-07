@@ -9,6 +9,7 @@ export interface Settings {
 	voice: string;
 	speed: number; // 0.5 – 2.0
 	mode: 'foco' | 'completo' | 'libro'; // vista: foco / página completa / libro físico paginado
+	updatedAt?: number; // para sincronización (last-write-wins)
 }
 
 export const SETTINGS_POR_DEFECTO: Settings = {
@@ -16,7 +17,8 @@ export const SETTINGS_POR_DEFECTO: Settings = {
 	provider: 'kokoro',
 	voice: 'ef_dora',
 	speed: 1.0,
-	mode: 'foco'
+	mode: 'foco',
+	updatedAt: 0
 };
 
 interface LenttonDB extends DBSchema {
@@ -89,7 +91,15 @@ export async function getSettings(): Promise<Settings> {
 	return { ...SETTINGS_POR_DEFECTO, ...guardado };
 }
 
-export async function saveSettings(settings: Settings): Promise<void> {
+// Por defecto marca updatedAt (cambio local). Al aplicar settings remotos, pasar
+// preservar=true para conservar el updatedAt del servidor.
+export async function saveSettings(settings: Settings, preservar = false): Promise<void> {
 	const db = await getDB();
-	await db.put('settings', settings, CLAVE_SETTINGS);
+	const rec = preservar ? settings : { ...settings, updatedAt: Date.now() };
+	await db.put('settings', rec, CLAVE_SETTINGS);
+}
+
+export async function getAllPositions(): Promise<ReadingPosition[]> {
+	const db = await getDB();
+	return db.getAll('positions');
 }

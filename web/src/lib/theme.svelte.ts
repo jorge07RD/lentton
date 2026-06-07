@@ -29,10 +29,12 @@ export async function initTema(): Promise<void> {
 	aplicar(t);
 }
 
-/** Alterna claro/oscuro y lo guarda. */
+/** Alterna claro/oscuro y lo guarda (y lo sincroniza si está activo). */
 export async function alternarTema(): Promise<void> {
 	const nuevo = efectivo === 'dark' ? 'light' : 'dark';
 	aplicar(nuevo);
 	const s = await getSettings();
 	await saveSettings({ ...s, theme: nuevo });
+	const { pushSettings } = await import('./sync');
+	pushSettings(await getSettings());
 }

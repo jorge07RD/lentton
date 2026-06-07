@@ -21,3 +21,7 @@ server/cache/
 
 # Logs
 *.log
+
+# Cloudflare / wrangler
+web/.dev.vars
+web/.wrangler/
