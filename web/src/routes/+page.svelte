@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { parseEpub } from '$lib/epub/parseEpub';
 	import { getAllBooks, saveBook, getPosition, savePosition, deleteBook } from '$lib/db';
@@ -63,7 +64,12 @@
 		cargando = false;
 	}
 
-	$effect(() => {
+	// IMPORTANTE: carga única al montar, NO un $effect. cargarBiblioteca() lee `filas`
+	// (revoca las coverUrl) y luego la reescribe; dentro de un $effect eso crea una
+	// dependencia reactiva que reejecuta el efecto en bucle infinito (y dispara
+	// sincronizar() sin parar → cientos de miles de peticiones a /api). Con onMount
+	// corre una sola vez.
+	onMount(() => {
 		(async () => {
 			await cargarBiblioteca();
 			// Sincronizar en segundo plano con la memoria compartida (si hay clave).
