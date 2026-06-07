@@ -18,11 +18,13 @@
 		"test:offline": "node scripts/e2e-offline.mjs",
 		"test:sync": "node scripts/e2e-sync.mjs",
 		"cf:schema": "wrangler d1 execute lentton --local --file=./schema.sql",
-		"cf:dev": "wrangler pages dev --port 8788 --compatibility-date 2024-11-01"
+		"cf:dev": "npm run build && wrangler pages dev .svelte-kit/cloudflare --port 8788",
+		"cf:deploy": "npm run build && wrangler pages deploy .svelte-kit/cloudflare --project-name=lentton --branch=main"
 	},
 	"devDependencies": {
+		"@cloudflare/workers-types": "^4.20260607.1",
 		"@eslint/js": "^10.0.1",
-		"@sveltejs/adapter-static": "^3.0.10",
+		"@sveltejs/adapter-cloudflare": "^7.2.8",
 		"@sveltejs/kit": "^2.57.0",
 		"@sveltejs/vite-plugin-svelte": "^7.0.0",
 		"@types/node": "^24",
