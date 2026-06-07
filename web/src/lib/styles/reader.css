@@ -34,7 +34,7 @@
 	letter-spacing: -0.003em;
 	text-wrap: pretty;
 	hanging-punctuation: first last;
-	transition: font-size 0.4s var(--ease);
+	transition: font-size 0.6s var(--ease-out);
 }
 /* En modo foco la letra crece (lectura inmersiva); en página completa, tamaño normal. */
 .reader.mode-focus .read-col {
@@ -54,8 +54,10 @@
 
 .sentence {
 	transition:
-		opacity 0.55s var(--ease),
-		color 0.4s var(--ease);
+		opacity 0.6s var(--ease-out),
+		color 0.5s var(--ease-out),
+		background 0.6s var(--ease-out),
+		box-shadow 0.6s var(--ease-out);
 	opacity: 1;
 	cursor: pointer;
 }
@@ -68,9 +70,32 @@
 	opacity: 1;
 	color: rgb(var(--ink-rgb));
 }
-.reader.mode-focus .read-scroll {
-	-webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 26%, #000 74%, transparent 100%);
-	mask-image: linear-gradient(to bottom, transparent 0%, #000 26%, #000 74%, transparent 100%);
+
+/* Viñeta superior/inferior: en vez de una máscara dura (que se apaga de golpe),
+   superponemos gradientes del color de fondo cuya opacidad se anima entre modos. */
+.reader::before,
+.reader::after {
+	content: '';
+	position: absolute;
+	left: 0;
+	right: 0;
+	height: 30vh;
+	z-index: 10;
+	pointer-events: none;
+	opacity: 0;
+	transition: opacity 0.6s var(--ease-out);
+}
+.reader::before {
+	top: 0;
+	background: linear-gradient(var(--bg), color-mix(in oklab, var(--bg) 0%, transparent));
+}
+.reader::after {
+	bottom: 0;
+	background: linear-gradient(color-mix(in oklab, var(--bg) 0%, transparent), var(--bg));
+}
+.reader.mode-focus::before,
+.reader.mode-focus::after {
+	opacity: 1;
 }
 
 /* COMPLETO — todo legible */

@@ -151,18 +151,28 @@
 			behavior: suave ? 'smooth' : 'auto'
 		});
 	}
+	let modoPrevio: 'foco' | 'completo' | null = null;
+	let idxPrevio = -1;
 	$effect(() => {
-		void idx;
-		void modo;
+		const cambioModo = modo !== modoPrevio;
+		const cambioIdx = idx !== idxPrevio;
 		void parrafos.length;
+		modoPrevio = modo;
+		idxPrevio = idx;
 		if (!scrollEl) return;
+
+		// Solo cambió el modo: la letra y la viñeta animan ~0.6s; un único re-centrado
+		// suave al final (sin scroll inmediato que pelee con la animación).
+		if (cambioModo && !cambioIdx) {
+			const t = setTimeout(() => centrar(true), 620);
+			return () => clearTimeout(t);
+		}
+
+		// Cambió la oración (o carga inicial): centrar enseguida.
 		requestAnimationFrame(() => {
 			centrar(!primerCentrado);
 			primerCentrado = false;
 		});
-		// Re-centrar al terminar la animación de tamaño (al cambiar de modo crece la letra).
-		const t = setTimeout(() => centrar(true), 450);
-		return () => clearTimeout(t);
 	});
 
 	// --- Autoocultado del cromo ---
