@@ -152,7 +152,7 @@
 	<div class="lib-inner">
 		<div class="lib-head">
 			<div>
-				<div class="wordmark">lentton<span class="dot"></span></div>
+				<div class="wordmark">focus<span class="dot"></span></div>
 				<div class="lib-sub">Leé con la vista. O dejá que te lean.</div>
 			</div>
 			<div class="lib-actions">

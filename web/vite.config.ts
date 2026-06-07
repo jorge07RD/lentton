@@ -21,8 +21,8 @@ export default defineConfig({
 				navigateFallbackDenylist: [/^\/tts/, /^\/voices/, /^\/health/]
 			},
 			manifest: {
-				name: 'Lentton — Lector con foco',
-				short_name: 'Lentton',
+				name: 'focus — Lector con foco',
+				short_name: 'focus',
 				description: 'Lectura con foco y narracion por voz, oracion a oracion.',
 				theme_color: '#111111',
 				background_color: '#111111',

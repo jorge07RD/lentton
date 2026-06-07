@@ -710,7 +710,7 @@
 					role="dialog"
 					tabindex="-1"
 				>
-					<h2>Cómo leer en Lentton</h2>
+					<h2>Cómo leer en focus</h2>
 					<p class="lead">
 						Una sola cosa a la vez. El texto se atenúa alrededor de la oración que suena; todo lo
 						demás se aparta.
